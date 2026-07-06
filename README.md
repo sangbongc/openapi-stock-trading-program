@@ -1,2 +1,2 @@
 # openapi-stock-trading-program
-This project is a reconstruction of a stock trading automation assignment I originally implemented in an economics programming course.
+This project reconstructs a rule-based simulated trading workflow using Korea Investment Open API. It focuses on API integration, basic risk controls, and transaction logging rather than profitability.
