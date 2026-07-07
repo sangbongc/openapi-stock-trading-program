@@ -1,114 +1,215 @@
-openapi-stock-trading-program
+# KIS Rule-Based Trading Program
 
-This project reconstructs a rule-based simulated trading workflow using Korea Investment Open API. It focuses on API integration, basic risk controls, and transaction logging rather than profitability.
+## Project Overview
 
-# Development Log
-
-## Phase 1. 프로젝트 초기 구성
-
-* 프로젝트 기본 디렉터리 구조 설계
-* GitHub Repository 생성
-* Python 개발 환경 구성
-* `.env`를 이용한 API Key 관리
-* `.gitignore` 설정을 통한 민감 정보 및 데이터베이스 파일 제외
+A Python-based rule-based stock trading system utilizing the Korea Investment & Securities OpenAPI.
+This project is designed to automate the entire investment workflow, including market data collection, storage, technical indicator calculation, strategy execution, and order management.
 
 ---
 
-## Phase 2. 한국투자증권 OpenAPI 연동
+# Tech Stack
 
-* Access Token 발급 기능 구현
-* Access Token 캐싱(`token.json`) 기능 구현
-* 현재가 조회 API 연동
-* 일봉 데이터 조회 API 연동
-* API 응답 예외 처리 기반 마련
-
----
-
-## Phase 3. 데이터 파싱
-
-* 현재가 API 응답 파싱
-* 일봉 데이터 API 응답 파싱
-* API 응답(JSON)을 프로젝트 내부 데이터 구조(dict)로 변환하도록 모듈 분리
+* Python
+* Korea Investment OpenAPI
+* SQLite
+* Pandas
+* Requests
+* Git / GitHub
 
 ---
 
-## Phase 4. SQLite 데이터베이스 구축
+# System Architecture
 
-* SQLite 기반 로컬 데이터베이스 구축
-* `current_prices` 테이블 설계
-* `daily_prices` 테이블 설계
-* 일봉 데이터 저장 기능 구현
-* 현재가 저장 기능 구현
-* 종목별 일봉 조회 기능 구현
-* `(stock_code, date)` 복합 기본키를 적용하여 동일 종목의 중복 저장 방지
-
----
-
-## Phase 5. Technical Indicator Module
-
-* Pandas 기반 데이터프레임 변환 기능 구현
-* 이동평균(MA) 계산 기능 구현
-* 거래량 이동평균 계산 기능 구현
-* RSI 계산 기능 구현
-* MACD 계산 기능 구현
-* Bollinger Band 계산 기능 구현
-* 공통 이동평균 함수(`add_rolling_mean`)로 리팩터링하여 코드 재사용성 향상
-
----
-
-## Phase 6. 코드 리팩터링
-
-* API / Parser / Database / Indicator 모듈 분리
-* 불필요한 import 제거
-* 함수 역할 분리
-* 토큰 재사용 구조 개선
-* 데이터 저장 구조 개선
+```text
+KIS OpenAPI
+        │
+        ▼
+api.py
+        │
+        ▼
+parser.py
+        │
+        ▼
+SQLite Database
+(database.py)
+        │
+        ▼
+indicator.py
+        │
+        ▼
+strategy.py (Planned)
+        │
+        ▼
+Dashboard / Trading (Planned)
+```
 
 ---
 
-# Next Development
+# Project Structure
 
-* Strategy Engine 구현
+```text
+.
+├── api.py              # Korea Investment OpenAPI communication
+├── config.py           # Environment configuration
+├── database.py         # SQLite database management
+├── indicator.py        # Technical indicators
+├── main.py             # Program entry point
+├── parser.py           # API response parser
+├── universe.py         # Stock universe
+├── requirements.txt
+├── .env.example
+└── README.md
+```
 
-  * Moving Average Strategy
-  * RSI Strategy
-  * MACD Strategy
-  * Breakout Strategy
+---
 
-* Dashboard 구현
+# Current Features
 
-  * 종가 차트
-  * 이동평균선 시각화
-  * RSI / MACD 시각화
-  * Bollinger Band 시각화
+### OpenAPI
 
-* Manual Trading Mode
+* Access Token 발급
+* Access Token Cache (`token.json`)
+* 현재가 조회 API
+* 일봉 조회 API
 
-  * 수동 매수/매도
-  * 주문 내역 저장
-  * 보유 종목 조회
+### Data Processing
 
-* Auto Trading Mode
+* JSON → Python Dictionary Parsing
+* API Response Normalization
 
-  * 전략 선택
-  * 자동 주문 실행
-  * 주문 로그 저장
-  * 손익 추적
+### Database
 
-* Market Scanner
+* SQLite Database 구축
+* `current_prices` Table
+* `daily_prices` Table
+* 복합 Primary Key (`stock_code`, `date`)
+* 현재가 저장
+* 일봉 저장
+* 종목별 일봉 조회
 
-  * 거래량 상위 종목
-  * 등락률 상위 종목
-  * 관심종목 자동 업데이트
+### Technical Indicators
 
-* DART API 연동
+* Moving Average
+* Volume Moving Average
+* RSI
+* MACD
+* Bollinger Bands
+* Generic Rolling Mean Function
 
-  * 사업보고서 수집
-  * 주요 재무지표 저장
-  * 투자 의사결정 보조 기능 추가
+### Software Architecture
 
-* Backtesting Engine
+* API Layer 분리
+* Parser Layer 분리
+* Database Layer 분리
+* Indicator Layer 분리
+* Token Cache 적용
+* Modular Project Structure
 
-  * 전략별 성과 분석
-  * 누적수익률 비교
-  * 성능 리포트 생성
+---
+
+# Roadmap
+
+## Phase 1 (Completed)
+
+### Project Setup
+
+* [x] GitHub Repository 구축
+* [x] 프로젝트 구조 설계
+* [x] Environment Variable 관리 (.env)
+* [x] .gitignore 구성
+
+### OpenAPI
+
+* [x] Access Token 발급
+* [x] Token Cache 구현
+* [x] 현재가 조회 API
+* [x] 일봉 조회 API
+
+### Database
+
+* [x] SQLite 구축
+* [x] Current Price 저장
+* [x] Daily Price 저장
+* [x] Composite Primary Key 적용
+* [x] 종목별 조회 기능
+
+### Data Processing
+
+* [x] API Parser 구현
+* [x] JSON → Dictionary 변환
+
+### Technical Indicators
+
+* [x] Moving Average
+* [x] Volume Moving Average
+* [x] RSI
+* [x] MACD
+* [x] Bollinger Bands
+* [x] Rolling Mean Function
+
+---
+
+## Phase 2 (In Progress)
+
+### Strategy Engine
+
+* [ ] Moving Average Strategy
+* [ ] RSI Strategy
+* [ ] MACD Strategy
+* [ ] Breakout Strategy
+
+### Market Scanner
+
+* [ ] Volume Top Stocks
+* [ ] Price Change Top Stocks
+* [ ] Dynamic Stock Universe
+
+### Manual Trading
+
+* [ ] Manual Buy
+* [ ] Manual Sell
+* [ ] Order History
+* [ ] Position Management
+
+### Dashboard
+
+* [ ] Streamlit Dashboard
+* [ ] Candlestick Chart
+* [ ] Indicator Visualization
+* [ ] Strategy Signal Visualization
+
+---
+
+## Phase 3 (Planned)
+
+### Auto Trading
+
+* [ ] Rule-based Auto Trading
+* [ ] Strategy Selection
+* [ ] Scheduled Execution
+* [ ] Trading Log
+
+### Fundamental Analysis
+
+* [ ] DART API Integration
+* [ ] Financial Statement Parsing
+* [ ] Financial Ratio Analysis
+
+### Backtesting
+
+* [ ] Strategy Backtesting
+* [ ] Performance Report
+* [ ] Portfolio Analytics
+
+### Future Improvements
+
+* [ ] Risk Management Module
+* [ ] AI-based Stock Ranking
+* [ ] Portfolio Optimization
+* [ ] Explainable Strategy Logs
+
+---
+
+# Future Vision
+
+This project aims to evolve beyond a simple trading bot into an integrated investment decision support platform by combining market data, technical analysis, financial statement analysis, visualization, and automated trading.
