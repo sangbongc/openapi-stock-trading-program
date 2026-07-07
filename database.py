@@ -83,12 +83,17 @@ def save_daily_price(daily_data: dict):
 
     cur.execute("""
         INSERT OR REPLACE INTO daily_prices (
-            stock_code, name, date, open, high, low, close, volume
+            stock_code,
+            date,
+            open,
+            high,
+            low,
+            close,
+            volume
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (
         daily_data["stock_code"],
-        daily_data.get("name"),
         daily_data["date"],
         daily_data["open"],
         daily_data["high"],
