@@ -27,15 +27,6 @@ def main():
         )
 
         save_daily_prices(daily_rows)
-df = get_daily_price_df("005930", limit=60)
-
-df = add_rolling_mean(df, "close", [5, 20], "ma")
-df = add_rolling_mean(df, "volume", [5, 20], "vol_ma")
-df = add_rsi(df, period=14)
-df = add_macd(df)
-df = add_bollinger_bands(df, window=20)
-
-print(df.tail())
 
 
 if __name__ == "__main__":
