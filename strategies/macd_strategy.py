@@ -1,9 +1,10 @@
 import pandas as pd
 
+from strategies.base_strategy import BaseStrategy
 from strategies.signal import Signal
 
 
-class MACDStrategy:
+class MACDStrategy(BaseStrategy):
     def __init__(self, short_period: int = 12, long_period: int = 26, signal_period: int = 9):
         self.short_period = short_period
         self.long_period = long_period

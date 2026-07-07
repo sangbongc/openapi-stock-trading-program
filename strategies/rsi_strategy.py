@@ -1,9 +1,10 @@
 import pandas as pd
 
+from strategies.base_strategy import BaseStrategy
 from strategies.signal import Signal
 
 
-class RSIStrategy:
+class RSIStrategy(BaseStrategy):
     def __init__(self, period: int = 14, buy_threshold: float = 30, sell_threshold: float = 70):
         self.period = period
         self.buy_threshold = buy_threshold
