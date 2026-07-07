@@ -99,35 +99,6 @@ def save_current_price(price_data: dict):
     conn.close()
 
 
-def save_daily_price(daily_data: dict):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        INSERT OR REPLACE INTO daily_prices (
-            stock_code,
-            date,
-            open,
-            high,
-            low,
-            close,
-            volume
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        daily_data["stock_code"],
-        daily_data["date"],
-        daily_data["open"],
-        daily_data["high"],
-        daily_data["low"],
-        daily_data["close"],
-        daily_data["volume"],
-    ))
-
-    conn.commit()
-    conn.close()
-
-
 def save_daily_prices(rows: list[dict]):
     conn = get_connection()
     cur = conn.cursor()

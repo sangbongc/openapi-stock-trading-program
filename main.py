@@ -3,7 +3,7 @@ from database import reset_daily_prices_table
 from api import get_access_token, get_current_price, get_daily_price
 from parser import parse_current_price, parse_daily_price
 from universe import STOCK_UNIVERSE
-from database import create_tables, save_current_price, save_daily_price, save_daily_prices, fetch_daily_prices_by_stock
+from database import create_tables, save_current_price, save_daily_prices, fetch_daily_prices_by_stock
 
 
 def main():
