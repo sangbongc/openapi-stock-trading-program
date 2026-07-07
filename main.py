@@ -1,11 +1,10 @@
 from datetime import datetime, timedelta
-from database import reset_daily_prices_table
-from api import get_access_token, get_current_price, get_daily_price
-from parser import parse_current_price, parse_daily_price
+
+from api import get_access_token, get_daily_price
+from parser import parse_daily_price
 from universe import STOCK_UNIVERSE
-from database import create_tables, save_current_price, save_daily_prices, fetch_daily_prices_by_stock
-
-
+from database import create_tables, save_daily_prices, fetch_daily_prices_by_stock
+from indicator import get_daily_price_df, add_rolling_mean, add_rsi, add_macd, add_bollinger_bands
 def main():
     create_tables()
     token = get_access_token()
@@ -28,13 +27,15 @@ def main():
         )
 
         save_daily_prices(daily_rows)
+df = get_daily_price_df("005930", limit=60)
 
-        # 저장 검증
-        saved_rows = fetch_daily_prices_by_stock(stock["code"], limit=5)
+df = add_rolling_mean(df, "close", [5, 20], "ma")
+df = add_rolling_mean(df, "volume", [5, 20], "vol_ma")
+df = add_rsi(df, period=14)
+df = add_macd(df)
+df = add_bollinger_bands(df, window=20)
 
-        print(f"\n===== {stock['name']} 저장 확인 =====")
-        for row in saved_rows:
-            print(row)
+print(df.tail())
 
 
 if __name__ == "__main__":
