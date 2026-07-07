@@ -213,3 +213,32 @@ Dashboard / Trading (Planned)
 # Future Vision
 
 This project aims to evolve beyond a simple trading bot into an integrated investment decision support platform by combining market data, technical analysis, financial statement analysis, visualization, and automated trading.
+
+---
+
+# Database Schema
+
+current_prices
+daily_prices
+(향후)
+orders
+positions
+strategy_logs
+
+# Execution Flow
+
+Program Start
+    ↓
+Access Token
+    ↓
+Collect Daily Prices
+    ↓
+Save to SQLite
+    ↓
+Load DataFrame
+    ↓
+Calculate Indicators
+    ↓
+Strategy Engine
+    ↓
+Manual / Auto Trading
