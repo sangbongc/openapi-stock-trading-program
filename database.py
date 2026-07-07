@@ -33,7 +33,29 @@ def create_tables():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS daily_prices (
             stock_code TEXT NOT NULL,
-            name TEXT,
+            date TEXT NOT NULL,
+            open INTEGER NOT NULL,
+            high INTEGER NOT NULL,
+            low INTEGER NOT NULL,
+            close INTEGER NOT NULL,
+            volume INTEGER NOT NULL,
+            PRIMARY KEY (stock_code, date)
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def reset_daily_prices_table():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("DROP TABLE IF EXISTS daily_prices")
+
+    cur.execute("""
+        CREATE TABLE daily_prices (
+            stock_code TEXT NOT NULL,
             date TEXT NOT NULL,
             open INTEGER NOT NULL,
             high INTEGER NOT NULL,
@@ -107,8 +129,35 @@ def save_daily_price(daily_data: dict):
 
 
 def save_daily_prices(rows: list[dict]):
-    for row in rows:
-        save_daily_price(row)
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.executemany("""
+        INSERT OR REPLACE INTO daily_prices (
+            stock_code,
+            date,
+            open,
+            high,
+            low,
+            close,
+            volume
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, [
+        (
+            row["stock_code"],
+            row["date"],
+            row["open"],
+            row["high"],
+            row["low"],
+            row["close"],
+            row["volume"],
+        )
+        for row in rows
+    ])
+
+    conn.commit()
+    conn.close()
 
 
 def fetch_all_current_prices():
@@ -139,6 +188,22 @@ def fetch_daily_prices_by_stock(stock_code: str, limit: int = 20):
         ORDER BY date DESC
         LIMIT ?
     """, (stock_code, limit))
+
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def fetch_all_daily_prices():
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT *
+        FROM daily_prices
+        ORDER BY stock_code, date DESC
+    """)
 
     rows = cur.fetchall()
     conn.close()
