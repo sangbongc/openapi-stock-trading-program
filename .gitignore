@@ -1,7 +1,9 @@
-.env
 __pycache__/
 *.pyc
 .vscode/
+#Database
 data/trading.db
 #Environment variables
 .env
+#Token cache
+data/token.json
