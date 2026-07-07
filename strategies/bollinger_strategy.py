@@ -5,6 +5,7 @@ from strategies.signal import Signal
 
 
 class BollingerBandStrategy(BaseStrategy):
+    name = "Bollinger Band"
     def __init__(self, period: int = 20, num_std: float = 2.0):
         self.period = period
         self.num_std = num_std

@@ -7,32 +7,31 @@ from strategies import (
     BollingerBandStrategy,
     MACDStrategy,
 )
+from indicator import ( get_daily_price_df, add_rolling_mean,  add_bollinger_bands, add_macd, add_rsi, )
+from tests.test_strategy_factory import create_strategies
 
+df = get_daily_price_df("005930", limit=120)
 
-df = pd.DataFrame({
-    "close": [
-        100, 99, 98, 97, 96,
-        95, 94, 93, 92, 91,
-        90, 89, 88, 87, 86,
-        85, 86, 87, 88, 89,
-        90, 91, 92, 93, 94,
-        95, 96, 97, 98, 99,
-        100, 101, 102, 103, 104,
-        105, 106, 107, 108, 109
-    ]
-})
+# Indicator 계산
+df = add_rolling_mean(
+    df,
+    column="close",
+    windows=[5, 20],
+    prefix="ma"
+)
+df = add_rsi(df)
+df = add_macd(df)
+df = add_bollinger_bands(df)
 
-df["ma5"] = df["close"].rolling(window=5).mean()
-df["ma20"] = df["close"].rolling(window=20).mean()
-
-engine = StrategyEngine([
-    MACrossStrategy(),
-    RSIStrategy(),
-    BollingerBandStrategy(),
-    MACDStrategy(),
-])
+engine = StrategyEngine(create_strategies([
+    "ma_cross",
+    "rsi",
+    "macd"
+]))
 
 result = engine.run(df)
+
+
 
 print("===== Strategy Analysis =====")
 

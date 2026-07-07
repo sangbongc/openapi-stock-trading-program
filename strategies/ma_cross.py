@@ -3,6 +3,7 @@ from strategies.signal import Signal
 
 
 class MACrossStrategy(BaseStrategy):
+    name = "MA Cross"
     def __init__(self, short_col: str = "ma5", long_col: str = "ma20"):
         self.short_col = short_col
         self.long_col = long_col

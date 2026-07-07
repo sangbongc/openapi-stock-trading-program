@@ -5,6 +5,7 @@ from strategies.signal import Signal
 
 
 class RSIStrategy(BaseStrategy):
+    name = "RSI"
     def __init__(self, period: int = 14, buy_threshold: float = 30, sell_threshold: float = 70):
         self.period = period
         self.buy_threshold = buy_threshold
