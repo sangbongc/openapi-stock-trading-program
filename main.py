@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-
+from database import reset_daily_prices_table
 from api import get_access_token, get_current_price, get_daily_price
 from parser import parse_current_price, parse_daily_price
 from universe import STOCK_UNIVERSE
