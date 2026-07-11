@@ -1,24 +1,58 @@
 import pandas as pd
 
 from strategies.macd_strategy import MACDStrategy
+from strategies.signal import Signal
 
-
-data = pd.DataFrame({
-    "close": [
-        100, 99, 98, 97, 96,
-        95, 94, 93, 92, 91,
-        90, 89, 88, 87, 86,
-        85, 86, 87, 88, 89,
-        90, 91, 92, 93, 94,
-        95, 96, 97, 98, 99,
-        100, 101, 102, 103, 104,
-        105, 106, 107, 108, 109
-    ]
-})
 
 strategy = MACDStrategy()
 
-signal = strategy.generate_signal(data)
 
-print(signal)
-print(signal.value)
+# ----------------------------
+# BUY 테스트
+# ----------------------------
+buy_df = pd.DataFrame({
+    "macd": [-1.0, 0.5],
+    "macd_signal": [-0.5, 0.2]
+})
+
+buy_result = strategy.generate_signal(buy_df)
+
+print("===== BUY TEST =====")
+print(buy_result)
+
+assert buy_result.signal == Signal.BUY
+
+
+# ----------------------------
+# SELL 테스트
+# ----------------------------
+sell_df = pd.DataFrame({
+    "macd": [0.8, -0.4],
+    "macd_signal": [0.5, -0.2]
+})
+
+sell_result = strategy.generate_signal(sell_df)
+
+print("\n===== SELL TEST =====")
+print(sell_result)
+
+assert sell_result.signal == Signal.SELL
+
+
+# ----------------------------
+# HOLD 테스트
+# ----------------------------
+hold_df = pd.DataFrame({
+    "macd": [0.5, 0.8],
+    "macd_signal": [0.2, 0.5]
+})
+
+hold_result = strategy.generate_signal(hold_df)
+
+print("\n===== HOLD TEST =====")
+print(hold_result)
+
+assert hold_result.signal == Signal.HOLD
+
+
+print("\n모든 MACD 전략 테스트를 통과했습니다.")

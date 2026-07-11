@@ -1,40 +1,114 @@
 import pandas as pd
 
-from strategies.base_strategy import BaseStrategy
-from strategies.signal import Signal
+from .base_strategy import BaseStrategy
+from .result import StrategyResult
+from .signal import Signal
 
 
 class MACDStrategy(BaseStrategy):
     name = "MACD"
-    def __init__(self, short_period: int = 12, long_period: int = 26, signal_period: int = 9):
-        self.short_period = short_period
-        self.long_period = long_period
-        self.signal_period = signal_period
 
-    def generate_signal(self, df: pd.DataFrame) -> Signal:
-        if "close" not in df.columns:
-            raise ValueError("df must contain 'close' column")
+    def generate_signal(self, data: pd.DataFrame) -> StrategyResult:
+        required_columns = {"macd", "macd_signal"}
 
-        if len(df) < self.long_period + self.signal_period:
-            return Signal.HOLD
+        if not required_columns.issubset(data.columns):
+            missing_columns = required_columns - set(data.columns)
 
-        close = df["close"]
+            return StrategyResult(
+                strategy=self.name,
+                signal=Signal.HOLD,
+                confidence=0.0,
+                reason=(
+                    "필요한 MACD 컬럼이 없습니다: "
+                    f"{', '.join(sorted(missing_columns))}"
+                ),
+            )
 
-        short_ema = close.ewm(span=self.short_period, adjust=False).mean()
-        long_ema = close.ewm(span=self.long_period, adjust=False).mean()
+        if len(data) < 2:
+            return StrategyResult(
+                strategy=self.name,
+                signal=Signal.HOLD,
+                confidence=0.0,
+                reason="MACD 교차를 판단하기 위한 데이터가 부족합니다.",
+            )
 
-        macd = short_ema - long_ema
-        signal_line = macd.ewm(span=self.signal_period, adjust=False).mean()
+        previous = data.iloc[-2]
+        current = data.iloc[-1]
 
-        prev_macd = macd.iloc[-2]
-        prev_signal = signal_line.iloc[-2]
+        previous_macd = previous["macd"]
+        previous_signal = previous["macd_signal"]
 
-        latest_macd = macd.iloc[-1]
-        latest_signal = signal_line.iloc[-1]
+        current_macd = current["macd"]
+        current_signal = current["macd_signal"]
 
-        if prev_macd <= prev_signal and latest_macd > latest_signal:
-            return Signal.BUY
-        elif prev_macd >= prev_signal and latest_macd < latest_signal:
-            return Signal.SELL
-        else:
-            return Signal.HOLD
+        values = [
+            previous_macd,
+            previous_signal,
+            current_macd,
+            current_signal,
+        ]
+
+        if any(pd.isna(value) for value in values):
+            return StrategyResult(
+                strategy=self.name,
+                signal=Signal.HOLD,
+                confidence=0.0,
+                reason="MACD 계산 결과에 결측치가 있습니다.",
+            )
+
+        previous_macd = float(previous_macd)
+        previous_signal = float(previous_signal)
+        current_macd = float(current_macd)
+        current_signal = float(current_signal)
+
+        difference = abs(current_macd - current_signal)
+        base_value = max(
+            abs(current_macd),
+            abs(current_signal),
+            1.0,
+        )
+
+        confidence = float(
+            min(difference / base_value, 1.0)
+        )
+
+        if (
+            previous_macd <= previous_signal
+            and current_macd > current_signal
+        ):
+            return StrategyResult(
+                strategy=self.name,
+                signal=Signal.BUY,
+                confidence=confidence,
+                reason=(
+                    f"MACD({current_macd:.2f})가 "
+                    f"시그널선({current_signal:.2f})을 "
+                    "상향 돌파했습니다."
+                ),
+            )
+
+        if (
+            previous_macd >= previous_signal
+            and current_macd < current_signal
+        ):
+            return StrategyResult(
+                strategy=self.name,
+                signal=Signal.SELL,
+                confidence=confidence,
+                reason=(
+                    f"MACD({current_macd:.2f})가 "
+                    f"시그널선({current_signal:.2f})을 "
+                    "하향 돌파했습니다."
+                ),
+            )
+
+        return StrategyResult(
+            strategy=self.name,
+            signal=Signal.HOLD,
+            confidence=0.0,
+            reason=(
+                f"MACD({current_macd:.2f})와 "
+                f"시그널선({current_signal:.2f}) 사이에 "
+                "최근 교차가 발생하지 않았습니다."
+            ),
+        )

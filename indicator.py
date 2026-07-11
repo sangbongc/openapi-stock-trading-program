@@ -143,7 +143,7 @@ def add_rolling_mean(
     df: pd.DataFrame,
     column: str,
     windows: list[int],
-    prefix: str,
+    prefix: str='ma',
 ) -> pd.DataFrame:
     """
     특정 컬럼에 대해 이동평균 컬럼을 추가한다.
