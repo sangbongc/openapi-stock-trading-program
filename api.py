@@ -6,10 +6,17 @@ import requests
 from requests import Response, Session
 from requests.exceptions import RequestException
 import logging
-from config import APP_KEY, APP_SECRET, BASE_URL, TOKEN_PATH
 from datetime import datetime, timedelta
 import os
-
+from config import (
+    ACCOUNT_NO,
+    ACCOUNT_PRODUCT_CODE,
+    APP_KEY,
+    APP_SECRET,
+    BASE_URL,
+    REQUEST_INTERVAL,
+    TOKEN_PATH
+)
 REQUEST_TIMEOUT = 10
 TOKEN_EXPIRY_BUFFER_MINUTES = 5
 
@@ -636,3 +643,235 @@ def _validate_date_range(
         raise ValueError(
             "조회 시작일은 종료일보다 늦을 수 없습니다."
         )
+
+
+def _place_cash_order(
+    stock_code: str,
+    quantity: int,
+    price: int = 0,
+    side: str = "BUY",
+    order_type: str = "MARKET",
+) -> dict[str, Any]:
+    """
+    국내주식 현금 주문을 요청한다.
+
+    Parameters
+    ----------
+    stock_code : str
+        6자리 종목코드
+
+    quantity : int
+        주문 수량
+
+    price : int, default=0
+        주문 가격.
+        시장가 주문은 0을 사용한다.
+
+    side : str, default="BUY"
+        BUY 또는 SELL
+
+    order_type : str, default="MARKET"
+        MARKET 또는 LIMIT
+
+    Returns
+    -------
+    dict
+        한국투자증권 주문 API 응답
+
+    Raises
+    ------
+    ValueError
+        잘못된 종목코드, 수량, 가격, 주문 방향 또는 주문 유형인 경우
+
+    RuntimeError
+        API가 주문을 거절한 경우
+
+    requests.RequestException
+        네트워크 요청에 실패한 경우
+    """
+    stock_code = str(stock_code).strip()
+    side = side.upper().strip()
+    order_type = order_type.upper().strip()
+
+    if len(stock_code) != 6 or not stock_code.isdigit():
+        raise ValueError(
+            "stock_code는 숫자로 된 6자리 종목코드여야 합니다."
+        )
+
+    if isinstance(quantity, bool) or not isinstance(quantity, int):
+        raise TypeError("quantity는 정수여야 합니다.")
+
+    if quantity <= 0:
+        raise ValueError("quantity는 1 이상이어야 합니다.")
+
+    if isinstance(price, bool) or not isinstance(price, int):
+        raise TypeError("price는 정수여야 합니다.")
+
+    if price < 0:
+        raise ValueError("price는 0 이상이어야 합니다.")
+
+    if side not in {"BUY", "SELL"}:
+        raise ValueError("side는 BUY 또는 SELL이어야 합니다.")
+
+    if order_type not in {"MARKET", "LIMIT"}:
+        raise ValueError(
+            "order_type은 MARKET 또는 LIMIT이어야 합니다."
+        )
+
+    if order_type == "LIMIT" and price <= 0:
+        raise ValueError(
+            "지정가 주문의 price는 1 이상이어야 합니다."
+        )
+
+    if order_type == "MARKET":
+        order_division = "01"
+        order_price = "0"
+    else:
+        order_division = "00"
+        order_price = str(price)
+
+    # 모의투자용 TR ID
+    tr_id = (
+        "VTTC0802U"
+        if side == "BUY"
+        else "VTTC0801U"
+    )
+
+    access_token = get_access_token()
+
+    url = (
+        f"{BASE_URL}"
+        "/uapi/domestic-stock/v1/trading/order-cash"
+    )
+
+    headers = {
+        "content-type": "application/json; charset=utf-8",
+        "authorization": f"Bearer {access_token}",
+        "appkey": APP_KEY,
+        "appsecret": APP_SECRET,
+        "tr_id": tr_id,
+        "custtype": "P",
+    }
+
+    body = {
+        "CANO": ACCOUNT_NO,
+        "ACNT_PRDT_CD": ACCOUNT_PRODUCT_CODE,
+        "PDNO": stock_code,
+        "ORD_DVSN": order_division,
+        "ORD_QTY": str(quantity),
+        "ORD_UNPR": order_price,
+    }
+
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=body,
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+
+    except requests.Timeout as exc:
+        raise requests.Timeout(
+            "주문 요청 시간이 초과되었습니다."
+        ) from exc
+
+    except requests.ConnectionError as exc:
+        raise requests.ConnectionError(
+            "한국투자증권 주문 서버에 연결할 수 없습니다."
+        ) from exc
+
+    except requests.HTTPError as exc:
+        raise requests.HTTPError(
+            f"주문 API HTTP 오류: "
+            f"{response.status_code} {response.text}"
+        ) from exc
+
+    result = response.json()
+
+    if result.get("rt_cd") != "0":
+        message_code = result.get("msg_cd", "UNKNOWN")
+        message = result.get(
+            "msg1",
+            "알 수 없는 주문 오류",
+        )
+
+        raise RuntimeError(
+            f"주문 실패 [{message_code}]: {message}"
+        )
+
+    return result
+
+def buy_stock(
+    stock_code: str,
+    quantity: int,
+    price: int = 0,
+    order_type: str = "MARKET",
+) -> dict[str, Any]:
+    """
+    국내주식을 현금 매수한다.
+
+    Parameters
+    ----------
+    stock_code : str
+        6자리 종목코드
+
+    quantity : int
+        매수 수량
+
+    price : int, default=0
+        지정가 주문 가격.
+        시장가 주문에서는 사용하지 않는다.
+
+    order_type : str, default="MARKET"
+        MARKET 또는 LIMIT
+
+    Returns
+    -------
+    dict
+        주문 API 응답
+    """
+    return _place_cash_order(
+        stock_code=stock_code,
+        quantity=quantity,
+        price=price,
+        side="BUY",
+        order_type=order_type,
+    )
+
+def sell_stock(
+    stock_code: str,
+    quantity: int,
+    price: int = 0,
+    order_type: str = "MARKET",
+) -> dict[str, Any]:
+    """
+    국내주식을 현금 매도한다.
+
+    Parameters
+    ----------
+    stock_code : str
+        6자리 종목코드
+
+    quantity : int
+        매도 수량
+
+    price : int, default=0
+        지정가 주문 가격.
+        시장가 주문에서는 사용하지 않는다.
+
+    order_type : str, default="MARKET"
+        MARKET 또는 LIMIT
+
+    Returns
+    -------
+    dict
+        주문 API 응답
+    """
+    return _place_cash_order(
+        stock_code=stock_code,
+        quantity=quantity,
+        price=price,
+        side="SELL",
+        order_type=order_type,
+    )

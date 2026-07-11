@@ -12,3 +12,6 @@ DB_PATH = "data/trading.db"
 TOKEN_PATH = "data/token.json"
 CHECK_INTERVAL = 60
 REQUEST_INTERVAL = 0.3
+ACCOUNT_PRODUCT_CODE = os.getenv(
+    "ACCOUNT_PRODUCT_CODE"
+)
