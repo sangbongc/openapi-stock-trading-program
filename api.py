@@ -1,46 +1,46 @@
-import json
-import os
-from datetime import datetime, timedelta
 from json import JSONDecodeError
+from pathlib import Path
 from typing import Any
-
+import json
 import requests
-from requests import Response
+from requests import Response, Session
 from requests.exceptions import RequestException
-
+import logging
 from config import APP_KEY, APP_SECRET, BASE_URL, TOKEN_PATH
-
+from datetime import datetime, timedelta
+import os
 
 REQUEST_TIMEOUT = 10
-
-# 서버가 알려준 만료 시각보다 조금 일찍 토큰을 교체한다.
 TOKEN_EXPIRY_BUFFER_MINUTES = 5
+
+logger = logging.getLogger(__name__)
+
+# TCP 연결을 재사용해 반복 호출 비용을 줄인다.
+_SESSION = requests.Session()
 
 
 class KISAPIError(Exception):
     """한국투자증권 API 호출 과정에서 발생하는 오류."""
 
-    pass
-
 
 def validate_api_config() -> None:
-    """
-    API 호출에 필요한 설정값이 존재하는지 확인한다.
-    """
-    missing_values = []
+    """API 호출에 필요한 설정값이 존재하는지 확인한다."""
+    required_values = {
+        "KIS_APP_KEY": APP_KEY,
+        "KIS_APP_SECRET": APP_SECRET,
+        "KIS_BASE_URL": BASE_URL,
+        "TOKEN_PATH": TOKEN_PATH,
+    }
 
-    if not APP_KEY:
-        missing_values.append("KIS_APP_KEY")
-
-    if not APP_SECRET:
-        missing_values.append("KIS_APP_SECRET")
-
-    if not BASE_URL:
-        missing_values.append("KIS_BASE_URL")
+    missing_values = [
+        name
+        for name, value in required_values.items()
+        if not value
+    ]
 
     if missing_values:
         raise ValueError(
-            "필수 환경변수가 설정되지 않았습니다: "
+            "필수 설정값이 존재하지 않습니다: "
             + ", ".join(missing_values)
         )
 
@@ -49,16 +49,29 @@ def build_headers(
     token: str,
     tr_id: str,
 ) -> dict[str, str]:
-    """
-    일반적인 한국투자증권 API 요청에 사용할 헤더를 생성한다.
-    """
+    """일반적인 한국투자증권 API 요청 헤더를 생성한다."""
+    if not token:
+        raise ValueError("접근토큰이 비어 있습니다.")
+
+    if not tr_id:
+        raise ValueError("TR ID가 비어 있습니다.")
+
     return {
         "content-type": "application/json; charset=utf-8",
         "authorization": f"Bearer {token}",
         "appkey": APP_KEY,
         "appsecret": APP_SECRET,
         "tr_id": tr_id,
+        "custtype": "P",
     }
+
+
+def _build_url(endpoint: str) -> str:
+    """BASE_URL과 endpoint 사이의 슬래시를 안전하게 결합한다."""
+    if not endpoint:
+        raise ValueError("API endpoint가 비어 있습니다.")
+
+    return f"{BASE_URL.rstrip('/')}/{endpoint.lstrip('/')}"
 
 
 def save_token(
@@ -67,26 +80,16 @@ def save_token(
     expires_at: datetime,
 ) -> None:
     """
-    토큰과 서버가 반환한 만료 시각을 JSON 파일에 저장한다.
+    토큰 정보를 JSON 파일에 저장한다.
 
-    Args:
-        access_token:
-            서버가 발급한 접근토큰
-
-        token_type:
-            토큰 유형. 일반적으로 Bearer
-
-        expires_at:
-            서버 응답의 access_token_token_expired를
-            datetime으로 변환한 값
+    임시 파일에 먼저 기록한 뒤 교체하여 저장 도중 파일이
+    손상될 가능성을 줄인다.
     """
-    token_directory = os.path.dirname(TOKEN_PATH)
-
-    if token_directory:
-        os.makedirs(
-            token_directory,
-            exist_ok=True,
-        )
+    token_path = Path(TOKEN_PATH)
+    token_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     token_data = {
         "access_token": access_token,
@@ -94,32 +97,49 @@ def save_token(
         "expires_at": expires_at.isoformat(),
     }
 
-    with open(
-        TOKEN_PATH,
-        "w",
-        encoding="utf-8",
-    ) as file:
-        json.dump(
-            token_data,
-            file,
-            ensure_ascii=False,
-            indent=4,
+    temporary_path = token_path.with_suffix(
+        token_path.suffix + ".tmp"
+    )
+
+    try:
+        with temporary_path.open(
+            "w",
+            encoding="utf-8",
+        ) as file:
+            json.dump(
+                token_data,
+                file,
+                ensure_ascii=False,
+                indent=4,
+            )
+
+        os.replace(
+            temporary_path,
+            token_path,
         )
+
+    except OSError as error:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        raise KISAPIError(
+            f"토큰 캐시 저장에 실패했습니다: {error}"
+        ) from error
 
 
 def delete_cached_token() -> None:
-    """
-    로컬 토큰 캐시 파일을 삭제한다.
-    """
-    if not os.path.exists(TOKEN_PATH):
-        return
+    """로컬 토큰 캐시 파일을 삭제한다."""
+    token_path = Path(TOKEN_PATH)
 
     try:
-        os.remove(TOKEN_PATH)
+        token_path.unlink(missing_ok=True)
 
     except OSError as error:
-        print(
-            f"토큰 캐시 파일을 삭제하지 못했습니다: {error}"
+        logger.warning(
+            "토큰 캐시 파일을 삭제하지 못했습니다: %s",
+            error,
         )
 
 
@@ -129,16 +149,14 @@ def load_token() -> str | None:
 
     서버가 알려준 만료 시각보다 5분 이상 남은 경우에만
     저장된 토큰을 반환한다.
-
-    Returns:
-        사용할 수 있는 접근토큰 또는 None
     """
-    if not os.path.exists(TOKEN_PATH):
+    token_path = Path(TOKEN_PATH)
+
+    if not token_path.exists():
         return None
 
     try:
-        with open(
-            TOKEN_PATH,
+        with token_path.open(
             "r",
             encoding="utf-8",
         ) as file:
@@ -148,7 +166,9 @@ def load_token() -> str | None:
         expires_at_text = data.get("expires_at")
 
         if not access_token or not expires_at_text:
-            print("토큰 캐시에 필요한 정보가 없습니다.")
+            logger.warning(
+                "토큰 캐시에 필요한 정보가 없습니다."
+            )
             delete_cached_token()
             return None
 
@@ -162,7 +182,10 @@ def load_token() -> str | None:
         TypeError,
         ValueError,
     ) as error:
-        print(f"토큰 캐시를 읽지 못했습니다: {error}")
+        logger.warning(
+            "토큰 캐시를 읽지 못했습니다: %s",
+            error,
+        )
         delete_cached_token()
         return None
 
@@ -171,7 +194,7 @@ def load_token() -> str | None:
     )
 
     if datetime.now() >= refresh_threshold:
-        print(
+        logger.info(
             "저장된 토큰의 만료가 임박했거나 "
             "이미 만료되었습니다."
         )
@@ -184,9 +207,7 @@ def load_token() -> str | None:
 def parse_json_response(
     response: Response,
 ) -> dict[str, Any]:
-    """
-    서버 응답을 JSON 딕셔너리로 변환한다.
-    """
+    """서버 응답을 JSON 딕셔너리로 변환한다."""
     try:
         data = response.json()
 
@@ -209,7 +230,7 @@ def validate_business_response(
     """
     응답 본문의 rt_cd를 이용해 업무 처리 성공 여부를 확인한다.
 
-    토큰 발급 응답에는 rt_cd가 없으므로,
+    토큰 발급 응답에는 rt_cd가 없을 수 있으므로,
     rt_cd가 존재하는 응답만 검사한다.
     """
     rt_cd = data.get("rt_cd")
@@ -222,15 +243,13 @@ def validate_business_response(
             "msg_cd",
             "UNKNOWN",
         )
-
         message = data.get(
             "msg1",
             "알 수 없는 API 오류가 발생했습니다.",
         )
 
         raise KISAPIError(
-            f"API 요청 실패 "
-            f"[{message_code}]: {message}"
+            f"API 요청 실패 [{message_code}]: {message}"
         )
 
 
@@ -238,9 +257,7 @@ def _get_safe_response_text(
     response: Response | None,
     max_length: int = 500,
 ) -> str:
-    """
-    HTTP 오류 응답을 지나치게 길지 않은 문자열로 변환한다.
-    """
+    """HTTP 오류 응답을 제한된 길이의 문자열로 변환한다."""
     if response is None:
         return ""
 
@@ -264,9 +281,6 @@ def _parse_token_expiration(
     우선순위:
     1. access_token_token_expired
     2. expires_in을 이용한 계산
-
-    Returns:
-        토큰 만료 시각
     """
     expiration_text = data.get(
         "access_token_token_expired"
@@ -300,6 +314,11 @@ def _parse_token_expiration(
             "expires_in 값이 올바른 숫자가 아닙니다."
         ) from error
 
+    if expires_in <= 0:
+        raise KISAPIError(
+            "expires_in 값은 0보다 커야 합니다."
+        )
+
     return datetime.now() + timedelta(
         seconds=expires_in
     )
@@ -313,12 +332,6 @@ def get_access_token(
 
     저장된 토큰이 유효하면 재사용하고,
     토큰이 없거나 만료가 임박한 경우 서버에 발급을 요청한다.
-
-    참고:
-        한국투자증권은 신규 토큰 발급 후 6시간 이내에
-        발급 API를 다시 호출하면 기존 토큰을 반환한다.
-        따라서 force_refresh=True라고 해도 서버가 반드시
-        새로운 문자열의 토큰을 발급하는 것은 아니다.
     """
     validate_api_config()
 
@@ -326,10 +339,10 @@ def get_access_token(
         cached_token = load_token()
 
         if cached_token:
-            print("저장된 토큰 사용")
+            logger.info("저장된 접근토큰을 사용합니다.")
             return cached_token
 
-    url = f"{BASE_URL}/oauth2/tokenP"
+    url = _build_url("/oauth2/tokenP")
 
     headers = {
         "content-type": "application/json; charset=utf-8"
@@ -342,13 +355,12 @@ def get_access_token(
     }
 
     try:
-        response = requests.post(
+        response = _SESSION.post(
             url=url,
             headers=headers,
             json=body,
             timeout=REQUEST_TIMEOUT,
         )
-
         response.raise_for_status()
 
     except requests.Timeout as error:
@@ -394,7 +406,12 @@ def get_access_token(
             f"접근토큰 발급 실패: {error_message}"
         )
 
-    if token_type != "Bearer":
+    if not token_type:
+        raise KISAPIError(
+            "응답에 token_type이 없습니다."
+        )
+
+    if str(token_type).lower() != "bearer":
         raise KISAPIError(
             "예상하지 못한 토큰 유형을 받았습니다: "
             f"{token_type}"
@@ -404,13 +421,13 @@ def get_access_token(
 
     save_token(
         access_token=access_token,
-        token_type=token_type,
+        token_type=str(token_type),
         expires_at=expires_at,
     )
 
-    print(
-        "접근토큰 발급 완료 "
-        f"(만료 시각: {expires_at:%Y-%m-%d %H:%M:%S})"
+    logger.info(
+        "접근토큰 발급 완료 (만료 시각: %s)",
+        expires_at.strftime("%Y-%m-%d %H:%M:%S"),
     )
 
     return access_token
@@ -424,16 +441,16 @@ def request_json(
     params: dict[str, Any] | None = None,
     json_body: dict[str, Any] | None = None,
     retry_on_unauthorized: bool = True,
+    session: Session | None = None,
 ) -> dict[str, Any]:
-    """
-    한국투자증권 API에 공통 HTTP 요청을 보낸다.
-    """
+    """한국투자증권 API에 공통 HTTP 요청을 보낸다."""
     validate_api_config()
 
-    url = f"{BASE_URL}{endpoint}"
+    request_session = session or _SESSION
+    url = _build_url(endpoint)
 
     try:
-        response = requests.request(
+        response = request_session.request(
             method=method.upper(),
             url=url,
             headers=build_headers(token, tr_id),
@@ -446,9 +463,8 @@ def request_json(
             response.status_code == 401
             and retry_on_unauthorized
         ):
-            print(
-                "토큰 인증에 실패하여 "
-                "토큰 발급 API를 한 번 다시 호출합니다."
+            logger.warning(
+                "토큰 인증에 실패하여 토큰을 한 번 갱신합니다."
             )
 
             delete_cached_token()
@@ -465,6 +481,7 @@ def request_json(
                 params=params,
                 json_body=json_body,
                 retry_on_unauthorized=False,
+                session=request_session,
             )
 
         response.raise_for_status()
@@ -510,9 +527,7 @@ def get_current_price(
     token: str,
     stock_code: str,
 ) -> dict[str, Any]:
-    """
-    특정 국내주식 종목의 현재가 정보를 조회한다.
-    """
+    """특정 국내주식 종목의 현재가 정보를 조회한다."""
     _validate_stock_code(stock_code)
 
     endpoint = (
@@ -540,9 +555,7 @@ def get_daily_price(
     start_date: str,
     end_date: str,
 ) -> dict[str, Any]:
-    """
-    특정 국내주식 종목의 기간별 일봉 데이터를 조회한다.
-    """
+    """특정 국내주식 종목의 기간별 일봉 데이터를 조회한다."""
     _validate_stock_code(stock_code)
     _validate_date_range(start_date, end_date)
 
@@ -572,11 +585,9 @@ def get_daily_price(
 def _validate_stock_code(
     stock_code: str,
 ) -> None:
-    """
-    국내주식 종목 코드가 6자리 숫자 문자열인지 검사한다.
-    """
+    """국내주식 종목 코드가 6자리 숫자 문자열인지 검사한다."""
     if not isinstance(stock_code, str):
-        raise ValueError(
+        raise TypeError(
             "종목 코드는 문자열로 입력해야 합니다."
         )
 
@@ -594,11 +605,9 @@ def _validate_stock_code(
 def _validate_date(
     date_text: str,
 ) -> datetime:
-    """
-    날짜가 YYYYMMDD 형식인지 검사한다.
-    """
+    """날짜가 YYYYMMDD 형식인지 검사한다."""
     if not isinstance(date_text, str):
-        raise ValueError(
+        raise TypeError(
             "날짜는 문자열로 입력해야 합니다."
         )
 
@@ -619,9 +628,7 @@ def _validate_date_range(
     start_date: str,
     end_date: str,
 ) -> None:
-    """
-    조회 시작일과 종료일의 형식 및 순서를 검사한다.
-    """
+    """조회 시작일과 종료일의 형식 및 순서를 검사한다."""
     start_datetime = _validate_date(start_date)
     end_datetime = _validate_date(end_date)
 
