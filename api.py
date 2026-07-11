@@ -875,3 +875,294 @@ def sell_stock(
         side="SELL",
         order_type=order_type,
     )
+
+def _to_int(value: Any, default: int = 0) -> int:
+    """
+    API 응답값을 정수로 변환한다.
+    """
+    if value in (None, ""):
+        return default
+
+    try:
+        return int(float(str(value).replace(",", "")))
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    """
+    API 응답값을 실수로 변환한다.
+    """
+    if value in (None, ""):
+        return default
+
+    try:
+        return float(str(value).replace(",", ""))
+    except (TypeError, ValueError):
+        return default
+    
+def get_account_balance(
+    include_zero_quantity: bool = False,
+    max_pages: int = 10,
+) -> dict[str, Any]:
+    """
+    국내주식 계좌의 보유 종목과 계좌 평가 정보를 조회한다.
+
+    Parameters
+    ----------
+    include_zero_quantity : bool, default=False
+        보유수량이 0인 종목도 결과에 포함할지 여부
+
+    max_pages : int, default=10
+        연속조회 최대 횟수
+
+    Returns
+    -------
+    dict
+        현금, 평가금액, 손익 및 보유종목 목록
+
+    Raises
+    ------
+    TypeError
+        입력값의 자료형이 잘못된 경우
+
+    ValueError
+        입력값이 허용 범위를 벗어난 경우
+
+    RuntimeError
+        한국투자증권 API가 조회 요청을 거절한 경우
+
+    requests.RequestException
+        네트워크 또는 HTTP 요청에 실패한 경우
+    """
+    if not isinstance(include_zero_quantity, bool):
+        raise TypeError(
+            "include_zero_quantity는 bool이어야 합니다."
+        )
+
+    if isinstance(max_pages, bool) or not isinstance(max_pages, int):
+        raise TypeError("max_pages는 정수여야 합니다.")
+
+    if max_pages <= 0:
+        raise ValueError("max_pages는 1 이상이어야 합니다.")
+
+    access_token = get_access_token()
+
+    url = (
+        f"{BASE_URL}"
+        "/uapi/domestic-stock/v1/trading/inquire-balance"
+    )
+
+    headers = {
+        "content-type": "application/json; charset=utf-8",
+        "authorization": f"Bearer {access_token}",
+        "appkey": APP_KEY,
+        "appsecret": APP_SECRET,
+        "tr_id": "VTTC8434R",
+        "custtype": "P",
+    }
+
+    positions: list[dict[str, Any]] = []
+    account_summary: dict[str, Any] = {}
+
+    ctx_area_fk100 = ""
+    ctx_area_nk100 = ""
+    tr_cont = ""
+
+    for _ in range(max_pages):
+        params = {
+            "CANO": ACCOUNT_NO,
+            "ACNT_PRDT_CD": ACCOUNT_PRODUCT_CODE,
+
+            # N: 기본 KRX 기준 조회
+            "AFHR_FLPR_YN": "N",
+
+            # 공식 샘플에도 포함되는 필드
+            "OFL_YN": "",
+
+            # 02: 종목별 조회
+            "INQR_DVSN": "02",
+
+            # 단가 구분
+            "UNPR_DVSN": "01",
+
+            # 펀드 결제분 포함 여부
+            "FUND_STTL_ICLD_YN": "N",
+
+            # 융자금액 자동상환 여부
+            "FNCG_AMT_AUTO_RDPT_YN": "N",
+
+            # 00: 전일 매매 포함
+            "PRCS_DVSN": "00",
+
+            # 연속조회용 값
+            "CTX_AREA_FK100": ctx_area_fk100,
+            "CTX_AREA_NK100": ctx_area_nk100,
+        }
+
+        request_headers = headers.copy()
+
+        if tr_cont:
+            request_headers["tr_cont"] = tr_cont
+
+        try:
+            response = requests.get(
+                url,
+                headers=request_headers,
+                params=params,
+                timeout=REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+
+        except requests.Timeout as exc:
+            raise requests.Timeout(
+                "계좌 잔고 조회 요청 시간이 초과되었습니다."
+            ) from exc
+
+        except requests.ConnectionError as exc:
+            raise requests.ConnectionError(
+                "한국투자증권 잔고 조회 서버에 "
+                "연결할 수 없습니다."
+            ) from exc
+
+        except requests.HTTPError as exc:
+            raise requests.HTTPError(
+                "계좌 잔고 조회 HTTP 오류: "
+                f"{response.status_code} {response.text}"
+            ) from exc
+
+        try:
+            result = response.json()
+        except ValueError as exc:
+            raise RuntimeError(
+                "계좌 잔고 조회 응답을 JSON으로 "
+                "변환할 수 없습니다."
+            ) from exc
+
+        if result.get("rt_cd") != "0":
+            message_code = result.get("msg_cd", "UNKNOWN")
+            message = result.get(
+                "msg1",
+                "알 수 없는 잔고 조회 오류",
+            )
+
+            raise RuntimeError(
+                f"계좌 잔고 조회 실패 "
+                f"[{message_code}]: {message}"
+            )
+
+        output1 = result.get("output1") or []
+        output2 = result.get("output2") or []
+
+        for item in output1:
+            quantity = _to_int(item.get("hldg_qty"))
+
+            if quantity == 0 and not include_zero_quantity:
+                continue
+
+            positions.append(
+                {
+                    "stock_code": str(
+                        item.get("pdno", "")
+                    ).strip(),
+                    "stock_name": str(
+                        item.get("prdt_name", "")
+                    ).strip(),
+                    "quantity": quantity,
+                    "sellable_quantity": _to_int(
+                        item.get("ord_psbl_qty")
+                    ),
+                    "avg_price": _to_float(
+                        item.get("pchs_avg_pric")
+                    ),
+                    "purchase_amount": _to_int(
+                        item.get("pchs_amt")
+                    ),
+                    "current_price": _to_int(
+                        item.get("prpr")
+                    ),
+                    "evaluation_amount": _to_int(
+                        item.get("evlu_amt")
+                    ),
+                    "profit_loss": _to_int(
+                        item.get("evlu_pfls_amt")
+                    ),
+                    "profit_rate": _to_float(
+                        item.get("evlu_pfls_rt")
+                    ),
+                    "today_buy_quantity": _to_int(
+                        item.get("thdt_buyqty")
+                    ),
+                    "today_sell_quantity": _to_int(
+                        item.get("thdt_sll_qty")
+                    ),
+                }
+            )
+
+        if output2:
+            summary = output2[0]
+
+            account_summary = {
+                "cash": _to_int(
+                    summary.get("dnca_tot_amt")
+                ),
+                "d1_cash": _to_int(
+                    summary.get("nxdy_excc_amt")
+                ),
+                "d2_cash": _to_int(
+                    summary.get("prvs_rcdl_excc_amt")
+                ),
+                "stock_evaluation_amount": _to_int(
+                    summary.get("scts_evlu_amt")
+                ),
+                "total_evaluation_amount": _to_int(
+                    summary.get("tot_evlu_amt")
+                ),
+                "total_profit_loss": _to_int(
+                    summary.get("evlu_pfls_smtl_amt")
+                ),
+                "previous_buy_amount": _to_int(
+                    summary.get("bfdy_buy_amt")
+                ),
+                "today_buy_amount": _to_int(
+                    summary.get("thdt_buy_amt")
+                ),
+                "previous_sell_amount": _to_int(
+                    summary.get("bfdy_sll_amt")
+                ),
+                "today_sell_amount": _to_int(
+                    summary.get("thdt_sll_amt")
+                ),
+            }
+
+        response_tr_cont = (
+            response.headers.get("tr_cont")
+            or response.headers.get("TR_CONT")
+            or ""
+        )
+
+        ctx_area_fk100 = str(
+            result.get("ctx_area_fk100")
+            or result.get("CTX_AREA_FK100")
+            or ""
+        ).strip()
+
+        ctx_area_nk100 = str(
+            result.get("ctx_area_nk100")
+            or result.get("CTX_AREA_NK100")
+            or ""
+        ).strip()
+
+        if response_tr_cont not in {"M", "F"}:
+            break
+
+        if not ctx_area_fk100 and not ctx_area_nk100:
+            break
+
+        tr_cont = "N"
+
+    return {
+        **account_summary,
+        "position_count": len(positions),
+        "positions": positions,
+    }
