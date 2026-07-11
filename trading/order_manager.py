@@ -20,32 +20,13 @@ class OrderManager:
         """
         매수 또는 매도 주문을 실행하고 결과를 DB에 저장한다.
 
-        Parameters
-        ----------
-        stock_code : str
-            6자리 종목코드
-
-        side : str
-            BUY 또는 SELL
-
-        quantity : int
-            주문 수량
-
-        price : int, default=0
-            지정가 주문 가격.
-            시장가 주문에서는 0을 사용한다.
-
-        order_type : str, default="MARKET"
-            MARKET 또는 LIMIT
-
-        Returns
-        -------
-        dict
-            주문 실행 결과
+        입력값 검증 실패는 DB에 저장하지 않는다.
+        API 호출 실패는 FAILED,
+        주문 접수 성공은 ACCEPTED로 저장한다.
         """
         stock_code = str(stock_code).strip()
-        side = side.upper().strip()
-        order_type = order_type.upper().strip()
+        side = str(side).upper().strip()
+        order_type = str(order_type).upper().strip()
 
         self._validate_order(
             stock_code=stock_code,
@@ -54,6 +35,8 @@ class OrderManager:
             price=price,
             order_type=order_type,
         )
+
+        api_result: dict[str, Any] | None = None
 
         try:
             if side == "BUY":
@@ -71,11 +54,31 @@ class OrderManager:
                     order_type=order_type,
                 )
 
-            output = api_result.get("output") or {}
+            if not isinstance(api_result, dict):
+                raise RuntimeError(
+                    "주문 API 응답이 딕셔너리 형식이 아닙니다."
+                )
 
-            order_no = output.get("ODNO")
             message_code = api_result.get("msg_cd")
             message = api_result.get("msg1")
+
+            if api_result.get("rt_cd") != "0":
+                raise RuntimeError(
+                    f"주문 실패 [{message_code or 'UNKNOWN'}]: "
+                    f"{message or '알 수 없는 주문 오류'}"
+                )
+
+            output = api_result.get("output") or {}
+
+            if not isinstance(output, dict):
+                raise RuntimeError(
+                    "주문 API 응답의 output 형식이 올바르지 않습니다."
+                )
+
+            order_no = output.get("ODNO") or output.get("odno")
+
+            if order_no is not None:
+                order_no = str(order_no).strip() or None
 
             order_id = save_order(
                 stock_code=stock_code,
@@ -83,7 +86,7 @@ class OrderManager:
                 order_type=order_type,
                 quantity=quantity,
                 price=price,
-                status="SUCCESS",
+                status="ACCEPTED",
                 order_no=order_no,
                 message_code=message_code,
                 message=message,
@@ -91,6 +94,7 @@ class OrderManager:
 
             return {
                 "success": True,
+                "status": "ACCEPTED",
                 "order_id": order_id,
                 "order_no": order_no,
                 "stock_code": stock_code,
@@ -104,6 +108,13 @@ class OrderManager:
             }
 
         except Exception as exc:
+            message_code = type(exc).__name__
+            message = str(exc)
+
+            if isinstance(api_result, dict):
+                message_code = api_result.get("msg_cd") or message_code
+                message = api_result.get("msg1") or message
+
             order_id = save_order(
                 stock_code=stock_code,
                 side=side,
@@ -112,12 +123,13 @@ class OrderManager:
                 price=price,
                 status="FAILED",
                 order_no=None,
-                message_code=type(exc).__name__,
-                message=str(exc),
+                message_code=message_code,
+                message=message,
             )
 
             return {
                 "success": False,
+                "status": "FAILED",
                 "order_id": order_id,
                 "order_no": None,
                 "stock_code": stock_code,
@@ -125,9 +137,9 @@ class OrderManager:
                 "order_type": order_type,
                 "quantity": quantity,
                 "price": price,
-                "message_code": type(exc).__name__,
-                "message": str(exc),
-                "api_result": None,
+                "message_code": message_code,
+                "message": message,
+                "api_result": api_result,
             }
 
     def buy(
@@ -204,7 +216,13 @@ class OrderManager:
         if price < 0:
             raise ValueError("price는 0 이상이어야 합니다.")
 
+        if order_type == "MARKET" and price != 0:
+            raise ValueError(
+                "시장가 주문은 가격을 지정할 수 없습니다. "
+                "price는 0으로 설정해야 합니다."
+            )
+
         if order_type == "LIMIT" and price <= 0:
             raise ValueError(
-                "지정가 주문의 price는 1 이상이어야 합니다."
+                "지정가 주문에서는 price를 1 이상으로 지정해야 합니다."
             )

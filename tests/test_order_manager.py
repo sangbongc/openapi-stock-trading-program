@@ -30,6 +30,7 @@ def test_buy_order_success(
     )
 
     assert result["success"] is True
+    assert result["status"] == "ACCEPTED"
     assert result["order_id"] == 1
     assert result["order_no"] == "0000012345"
     assert result["side"] == "BUY"
@@ -47,7 +48,7 @@ def test_buy_order_success(
         order_type="MARKET",
         quantity=1,
         price=0,
-        status="SUCCESS",
+        status="ACCEPTED",
         order_no="0000012345",
         message_code="APBK0013",
         message="주문 전송 완료",
@@ -83,6 +84,7 @@ def test_sell_order_success(
     )
 
     assert result["success"] is True
+    assert result["status"] == "ACCEPTED"
     assert result["order_id"] == 2
     assert result["order_no"] == "0000054321"
     assert result["side"] == "SELL"
@@ -100,7 +102,7 @@ def test_sell_order_success(
         order_type="MARKET",
         quantity=2,
         price=0,
-        status="SUCCESS",
+        status="ACCEPTED",
         order_no="0000054321",
         message_code="APBK0013",
         message="주문 전송 완료",
@@ -130,6 +132,7 @@ def test_buy_order_failure(
     )
 
     assert result["success"] is False
+    assert result["status"] == "FAILED"
     assert result["order_id"] == 3
     assert result["order_no"] is None
     assert result["message_code"] == "RuntimeError"
