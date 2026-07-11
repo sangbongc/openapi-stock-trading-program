@@ -2,12 +2,12 @@ import os
 import sqlite3
 from config import DB_PATH
 
-
+#db연결
 def get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     return sqlite3.connect(DB_PATH)
 
-
+#테이블 생성
 def create_tables():
     conn = get_connection()
     cur = conn.cursor()
@@ -46,7 +46,7 @@ def create_tables():
     conn.commit()
     conn.close()
 
-
+#일봉 테이블 초기화(db구조 변경시 사용)
 def reset_daily_prices_table():
     conn = get_connection()
     cur = conn.cursor()
@@ -69,7 +69,7 @@ def reset_daily_prices_table():
     conn.commit()
     conn.close()
 
-
+#현재가 저장
 def save_current_price(price_data: dict):
     conn = get_connection()
     cur = conn.cursor()
@@ -98,7 +98,7 @@ def save_current_price(price_data: dict):
     conn.commit()
     conn.close()
 
-
+#일일가 저장
 def save_daily_prices(rows: list[dict]):
     conn = get_connection()
     cur = conn.cursor()
@@ -130,7 +130,7 @@ def save_daily_prices(rows: list[dict]):
     conn.commit()
     conn.close()
 
-
+#현재가 테이블에서 모든 가격 조회
 def fetch_all_current_prices():
     conn = get_connection()
     conn.row_factory = sqlite3.Row
@@ -146,7 +146,7 @@ def fetch_all_current_prices():
     conn.close()
     return [dict(row) for row in rows]
 
-
+#일일가 테이블에서 선택한 종목 조회
 def fetch_daily_prices_by_stock(stock_code: str, limit: int = 20):
     conn = get_connection()
     conn.row_factory = sqlite3.Row
@@ -164,7 +164,7 @@ def fetch_daily_prices_by_stock(stock_code: str, limit: int = 20):
     conn.close()
     return [dict(row) for row in rows]
 
-
+#일일가 테이블에서 모든 종목을 조회
 def fetch_all_daily_prices():
     conn = get_connection()
     conn.row_factory = sqlite3.Row
