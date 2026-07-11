@@ -1,542 +1,254 @@
-# KIS Rule-Based Trading Program
+# KIS OpenAPI Rule-Based Auto Trading Program
 
-## Project Overview
+## 📌 Project Overview
 
-A Python-based rule-based stock trading system using the Korea Investment & Securities OpenAPI.
+한국투자증권 OpenAPI를 활용한 **규칙 기반(Rule-Based) 자동매매 프로그램**입니다.
 
-This project is a reconstruction and expansion of a stock trading automation assignment originally implemented in an economics programming course.
-The goal is to build a modular investment decision support system that can collect market data, store it in a database, calculate technical indicators, generate strategy signals, and eventually support backtesting, dashboard visualization, and automated trading.
+단순한 API 호출 예제가 아니라 실제 자동매매 시스템을 목표로 개발하고 있으며, 모듈화를 통해 유지보수성과 확장성을 고려한 구조로 설계하였습니다.
+
+주요 목표는 다음과 같습니다.
+
+* 한국투자증권 OpenAPI 기반 자동매매
+* SQLite 기반 데이터 관리
+* 기술적 지표 자동 계산
+* 전략(Strategy) 기반 매매 의사결정
+* 주문 및 주문 이력 관리
+* 향후 백테스트 및 포트폴리오 분석 지원
 
 ---
 
-## Tech Stack
+# Tech Stack
 
-* Python
-* Korea Investment & Securities OpenAPI
+* Python 3
 * SQLite
 * Pandas
-* Requests
+* KIS OpenAPI
+* unittest / unittest.mock
 * Git / GitHub
 
 ---
 
-## System Architecture
+# Project Structure
 
 ```text
-KIS OpenAPI
-        │
-        ▼
-api.py
-        │
-        ▼
-parser.py
-        │
-        ▼
-SQLite Database
-(database.py)
-        │
-        ▼
-indicator.py
-        │
-        ▼
-strategies/
-        │
-        ▼
-Strategy Engine
-        │
-        ▼
-Dashboard / Trading / Backtesting
-```
+kis-rule-based-trading-program/
 
----
-
-## Project Structure
-
-```text
-.
-├── api.py                  # Korea Investment OpenAPI communication
-├── config.py               # Environment variable and API configuration
-├── database.py             # SQLite database management
-├── indicator.py            # Technical indicator calculation
-├── main.py                 # Program entry point
-├── parser.py               # API response parser
-├── universe.py             # Stock universe management
-├── data/                   # Local data storage
-├── strategies/             # Rule-based trading strategies
+├── api.py
+├── config.py
+├── database.py
+├── parser.py
+├── indicator.py
+├── universe.py
+│
+├── trading/
+│   └── order_manager.py
+│
+├── strategies/
 │   ├── __init__.py
 │   ├── base_strategy.py
 │   ├── signal.py
+│   ├── result.py
+│   ├── strategy_factory.py
+│   ├── strategy_engine.py
 │   ├── ma_cross.py
-│   ├── rsi_strategy.py
-│   ├── bollinger_strategy.py
-│   └── macd_strategy.py
-├── tests/                  # Strategy and module tests
-├── requirements.txt
-├── .env.example
-├── .gitignore
-└── README.md
+│   ├── rsi.py
+│   ├── macd.py
+│   └── bollinger.py
+│
+├── tests/
+│   ├── test_strategy_factory.py
+│   ├── test_strategy_engine.py
+│   ├── test_order_manager.py
+│   └── ...
+│
+├── trading.db
+├── README.md
+└── requirements.txt
 ```
 
 ---
 
-## Current Features
+# Current Features
 
-### OpenAPI
+## OpenAPI
 
-* Access Token 발급
-* Access Token Cache 적용
-* 현재가 조회 API
-* 일봉 조회 API
+* OAuth2 인증 및 Access Token 발급
+* Access Token 캐싱
+* 현재가 조회
+* 일봉 데이터 조회
+* 시장가 / 지정가 매수 주문
+* 시장가 / 지정가 매도 주문
 
-### Data Processing
+---
 
-* JSON API Response Parsing
-* API Response Normalization
-* 종목별 가격 데이터 변환
+## SQLite Database
 
-### Database
+구현 완료
 
-* SQLite Database 구축
-* `current_prices` Table
-* `daily_prices` Table
-* Composite Primary Key 적용
 * 현재가 저장
 * 일봉 저장
+* 주문 내역 저장
 * 종목별 일봉 조회
+* 데이터 일괄 저장(Bulk Insert)
 
-### Technical Indicators
+---
+
+## Technical Indicators
+
+직접 Pandas를 이용하여 계산하도록 구현
+
+지원 지표
 
 * Moving Average
-* Volume Moving Average
 * RSI
 * MACD
 * Bollinger Bands
-* Generic Rolling Mean Function
 
-### Strategy Module
+---
 
-* Moving Average Cross Strategy
+## Strategy System
+
+전략을 독립적인 클래스로 구현
+
+현재 지원 전략
+
+* Moving Average Cross
+* RSI
+* MACD
+* Bollinger Bands
+
+공통 인터페이스
+
+* BaseStrategy
+
+결과 객체
+
+* StrategyResult
+* Signal Enum
+
+---
+
+## Strategy Engine
+
+구현 완료
+
+기능
+
+* 여러 전략 실행
+* 전략 결과 통합
+* 최종 BUY / SELL / HOLD 결정
+* 다수결 기반 최종 Signal 생성
+
+---
+
+## Strategy Factory
+
+구현 완료
+
+기능
+
+* 전략 객체 생성
+* 전략 리스트 생성
+* 이름 기반 전략 관리
+
+---
+
+## Order Manager
+
+구현 완료
+
+기능
+
+* 매수 주문 실행
+* 매도 주문 실행
+* 입력값 검증
+* 주문 성공 / 실패 처리
+* 주문 결과 SQLite 저장
+* API 예외 처리
+
+현재 OrderManager는 **주문 접수(ACCEPTED)** 까지의 역할을 담당합니다.
+
+---
+
+# Testing
+
+단위 테스트 완료
+
+테스트 대상
+
+* Strategy Factory
+* Strategy Engine
+* MA Cross Strategy
 * RSI Strategy
-* Bollinger Band Strategy
 * MACD Strategy
-* `Signal` Enum을 통한 공통 매매 신호 관리
+* Bollinger Band Strategy
+* OrderManager
 
-  * `BUY`
-  * `SELL`
-  * `HOLD`
+테스트 항목
 
----
-
-## Strategy Calculation Logic
-
-현재 프로젝트의 전략 모듈은 가격 데이터 `DataFrame`을 입력받아 `BUY`, `SELL`, `HOLD` 중 하나의 신호를 반환한다.
-
-각 전략은 기본적으로 `close` 컬럼을 기준으로 계산한다.
+* 정상 동작
+* 입력값 검증
+* 예외 처리
+* Mock을 이용한 API 호출 테스트
+* Mock을 이용한 DB 저장 테스트
 
 ---
 
-### 1. Moving Average Cross Strategy
+# Development Roadmap
 
-Moving Average Cross 전략은 단기 이동평균선과 장기 이동평균선의 교차 여부를 기준으로 매매 신호를 판단한다.
+## Phase 1 (Completed)
 
-현재 전략 코드는 이미 계산된 이동평균 컬럼을 사용하여 교차 여부를 판단하는 구조이다.
-
-예를 들어 다음과 같은 이동평균 컬럼을 사용한다.
-
-```python
-ma5
-ma20
-```
-
-단기 이동평균선은 짧은 기간의 평균 가격을 의미하고, 장기 이동평균선은 더 긴 기간의 평균 가격을 의미한다.
-
-일반적인 이동평균 계산식은 다음과 같다.
-
-```python
-short_ma = close.rolling(window=short_window).mean()
-long_ma = close.rolling(window=long_window).mean()
-```
-
-#### BUY 조건
-
-이전 시점에는 단기 이동평균선이 장기 이동평균선보다 낮거나 같았지만, 현재 시점에서 단기 이동평균선이 장기 이동평균선을 상향 돌파하면 매수 신호를 발생시킨다.
-
-```python
-prev_short <= prev_long and latest_short > latest_long
-```
-
-이는 일반적으로 골든크로스라고 부른다.
-
-#### SELL 조건
-
-이전 시점에는 단기 이동평균선이 장기 이동평균선보다 높거나 같았지만, 현재 시점에서 단기 이동평균선이 장기 이동평균선을 하향 돌파하면 매도 신호를 발생시킨다.
-
-```python
-prev_short >= prev_long and latest_short < latest_long
-```
-
-이는 일반적으로 데드크로스라고 부른다.
-
-#### Signal
-
-```text
-Golden Cross → BUY
-Dead Cross   → SELL
-No Cross     → HOLD
-```
-
----
-
-### 2. RSI Strategy
-
-RSI 전략은 가격의 상승폭과 하락폭을 비교하여 현재 주가가 과매수 상태인지, 과매도 상태인지 판단하는 전략이다.
-
-#### Calculation
-
-먼저 종가의 변화량을 계산한다.
-
-```python
-delta = close.diff()
-```
-
-상승분과 하락분을 분리한다.
-
-```python
-gain = delta.clip(lower=0)
-loss = -delta.clip(upper=0)
-```
-
-평균 상승폭과 평균 하락폭을 계산한다.
-
-```python
-avg_gain = gain.rolling(window=period).mean()
-avg_loss = loss.rolling(window=period).mean()
-```
-
-상대강도 `RS`를 계산한다.
-
-```python
-rs = avg_gain / avg_loss
-```
-
-RSI는 다음 공식으로 계산한다.
-
-```python
-rsi = 100 - (100 / (1 + rs))
-```
-
-#### BUY 조건
-
-RSI가 30보다 낮으면 과매도 상태로 판단하여 매수 신호를 발생시킨다.
-
-```python
-latest_rsi < 30
-```
-
-#### SELL 조건
-
-RSI가 70보다 높으면 과매수 상태로 판단하여 매도 신호를 발생시킨다.
-
-```python
-latest_rsi > 70
-```
-
-#### Signal
-
-```text
-RSI < 30 → BUY
-RSI > 70 → SELL
-Otherwise → HOLD
-```
-
----
-
-### 3. Bollinger Band Strategy
-
-Bollinger Band 전략은 이동평균선과 표준편차를 이용하여 현재 주가가 통계적으로 높은 구간인지 낮은 구간인지 판단하는 전략이다.
-
-#### Calculation
-
-중심선은 일정 기간의 이동평균으로 계산한다.
-
-```python
-middle_band = close.rolling(window=period).mean()
-```
-
-같은 기간의 표준편차를 계산한다.
-
-```python
-std = close.rolling(window=period).std()
-```
-
-상단 밴드와 하단 밴드는 다음과 같이 계산한다.
-
-```python
-upper_band = middle_band + num_std * std
-lower_band = middle_band - num_std * std
-```
-
-기본 설정은 다음과 같다.
-
-```python
-period = 20
-num_std = 2.0
-```
-
-#### BUY 조건
-
-현재 종가가 하단 밴드보다 낮으면 주가가 과도하게 하락한 것으로 판단하여 매수 신호를 발생시킨다.
-
-```python
-latest_close < latest_lower
-```
-
-#### SELL 조건
-
-현재 종가가 상단 밴드보다 높으면 주가가 과도하게 상승한 것으로 판단하여 매도 신호를 발생시킨다.
-
-```python
-latest_close > latest_upper
-```
-
-#### Signal
-
-```text
-Close < Lower Band → BUY
-Close > Upper Band → SELL
-Inside Band        → HOLD
-```
-
----
-
-### 4. MACD Strategy
-
-MACD 전략은 단기 지수이동평균과 장기 지수이동평균의 차이를 이용하여 추세 전환을 판단하는 전략이다.
-
-#### Calculation
-
-단기 지수이동평균을 계산한다.
-
-```python
-short_ema = close.ewm(span=short_period, adjust=False).mean()
-```
-
-장기 지수이동평균을 계산한다.
-
-```python
-long_ema = close.ewm(span=long_period, adjust=False).mean()
-```
-
-MACD선은 단기 EMA에서 장기 EMA를 차감하여 계산한다.
-
-```python
-macd = short_ema - long_ema
-```
-
-Signal선은 MACD선의 지수이동평균으로 계산한다.
-
-```python
-signal_line = macd.ewm(span=signal_period, adjust=False).mean()
-```
-
-기본 설정은 다음과 같다.
-
-```python
-short_period = 12
-long_period = 26
-signal_period = 9
-```
-
-#### BUY 조건
-
-이전 시점에는 MACD선이 Signal선보다 낮거나 같았지만, 현재 시점에서 MACD선이 Signal선을 상향 돌파하면 매수 신호를 발생시킨다.
-
-```python
-prev_macd <= prev_signal and latest_macd > latest_signal
-```
-
-#### SELL 조건
-
-이전 시점에는 MACD선이 Signal선보다 높거나 같았지만, 현재 시점에서 MACD선이 Signal선을 하향 돌파하면 매도 신호를 발생시킨다.
-
-```python
-prev_macd >= prev_signal and latest_macd < latest_signal
-```
-
-#### Signal
-
-```text
-MACD crosses above Signal Line → BUY
-MACD crosses below Signal Line → SELL
-No Cross                       → HOLD
-```
-
----
-
-## Strategy Signal Summary
-
-| Strategy             | BUY 조건                    | SELL 조건                   | HOLD 조건       |
-| -------------------- | ------------------------- | ------------------------- | ------------- |
-| Moving Average Cross | 단기 이동평균선이 장기 이동평균선을 상향 돌파 | 단기 이동평균선이 장기 이동평균선을 하향 돌파 | 교차 없음         |
-| RSI                  | RSI < 30                  | RSI > 70                  | 30 ≤ RSI ≤ 70 |
-| Bollinger Band       | 현재가 < 하단 밴드               | 현재가 > 상단 밴드               | 밴드 내부         |
-| MACD                 | MACD선이 Signal선을 상향 돌파     | MACD선이 Signal선을 하향 돌파     | 교차 없음         |
-
----
-
-## Software Architecture
-
-* API Layer 분리
-* Parser Layer 분리
-* Database Layer 분리
-* Indicator Layer 분리
-* Strategy Layer 분리
-* Token Cache 적용
-* Modular Project Structure
-
----
-
-## How to Run Tests
-
-프로젝트 루트 디렉터리에서 다음과 같이 실행한다.
-
-```bash
-python -m tests.test_ma_cross
-python -m tests.test_rsi_strategy
-python -m tests.test_bollinger_strategy
-python -m tests.test_macd_strategy
-```
-
-`python -m` 방식으로 실행하면 프로젝트 루트를 기준으로 패키지를 인식하므로, `strategies` 모듈을 안정적으로 import할 수 있다.
-
----
-
-## Roadmap
-
-## Phase 1: Completed
-
-### Project Setup
-
-* [x] GitHub Repository 구축
-* [x] 프로젝트 구조 설계
-* [x] Environment Variable 관리
-* [x] `.gitignore` 구성
-
-### OpenAPI
-
-* [x] Access Token 발급
-* [x] Token Cache 구현
-* [x] 현재가 조회 API
-* [x] 일봉 조회 API
-
-### Database
-
+* [x] OpenAPI 연동
 * [x] SQLite 구축
-* [x] Current Price 저장
-* [x] Daily Price 저장
-* [x] Composite Primary Key 적용
-* [x] 종목별 조회 기능
-
-### Data Processing
-
-* [x] API Parser 구현
-* [x] JSON Response 변환
-
-### Technical Indicators
-
-* [x] Moving Average
-* [x] Volume Moving Average
-* [x] RSI
-* [x] MACD
-* [x] Bollinger Bands
-* [x] Rolling Mean Function
+* [x] Parser 구현
+* [x] Indicator 구현
+* [x] Strategy 구현
+* [x] Strategy Factory
+* [x] Strategy Engine
+* [x] Order Manager
 
 ---
 
-## Phase 2: In Progress
+## Phase 2 (In Progress)
 
-### Strategy Module
+* [ ] Execution Manager
+* [ ] Position Manager
+* [ ] Order Fill Tracking
+* [ ] Portfolio Management
+* [ ] Risk Management
 
-* [x] Signal Enum
-* [x] Base Strategy 구조
-* [x] Moving Average Cross Strategy
-* [x] RSI Strategy
-* [x] Bollinger Band Strategy
-* [x] MACD Strategy
-* [ ] Strategy Engine
-* [ ] Multiple Strategy Aggregation
-* [ ] Final Signal Decision Logic
+---
 
-### Market Scanner
+## Phase 3 (Planned)
 
-* [ ] Volume Top Stocks
-* [ ] Price Change Top Stocks
-* [ ] Dynamic Stock Universe
-
-### Manual Trading
-
-* [ ] Manual Buy
-* [ ] Manual Sell
-* [ ] Order History
-* [ ] Position Management
-
-### Dashboard
-
+* [ ] Market Scanner
+* [ ] Backtesting
+* [ ] DART OpenAPI 연동
 * [ ] Streamlit Dashboard
-* [ ] Candlestick Chart
-* [ ] Indicator Visualization
-* [ ] Strategy Signal Visualization
-
----
-
-## Phase 3: Planned
-
-### Auto Trading
-
-* [ ] Rule-based Auto Trading
-* [ ] Strategy Selection
-* [ ] Scheduled Execution
-* [ ] Trading Log
-
-### Fundamental Analysis
-
-* [ ] DART API Integration
-* [ ] Financial Statement Parsing
-* [ ] Financial Ratio Analysis
-
-### Backtesting
-
-* [ ] Strategy Backtesting
-* [ ] Performance Report
 * [ ] Portfolio Analytics
-
-### Future Improvements
-
-* [ ] Risk Management Module
-* [ ] AI-based Stock Ranking
-* [ ] Portfolio Optimization
-* [ ] Explainable Strategy Logs
+* [ ] Performance Report
+* [ ] Trade Log Visualization
 
 ---
 
-## Future Vision
+# Future Improvements
 
-This project aims to evolve beyond a simple trading bot into an integrated investment decision support platform by combining market data, technical analysis, financial statement analysis, visualization, backtesting, and automated trading.
+* 실시간 체결 관리
+* 부분 체결 처리
+* 계좌 잔고 및 보유 종목 동기화
+* 주문 상태 자동 갱신
+* 다중 전략 조합
+* 리스크 기반 포지션 사이징
+* 실시간 자동매매
+* 백테스트 엔진 구축
+* 공시(DART) 데이터 기반 투자 의사결정
 
-The long-term goal is to build a modular system where each component can be independently improved and connected into a full investment workflow.
+---
 
-```text
-Market Data
-    +
-Technical Indicators
-    +
-Rule-based Strategies
-    +
-Financial Statement Analysis
-    +
-Backtesting
-    +
-Dashboard
-    +
-Trading Execution
-```
+# Project Goal
+
+본 프로젝트는 한국투자증권 OpenAPI를 활용한 단순 API 예제가 아니라,
+
+**실제 운용 가능한 자동매매 시스템 구축**을 목표로 개발 중입니다.
+
+또한 객체지향 설계, 모듈화, 단위 테스트를 적극 활용하여 유지보수성과 확장성을 고려한 구조를 지향하고 있습니다.
