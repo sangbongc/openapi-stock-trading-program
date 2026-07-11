@@ -23,7 +23,7 @@ class RSIStrategy(BaseStrategy):
         self.overbought = overbought
 
     def generate_signal(self, data: pd.DataFrame) -> StrategyResult:
-        if "rsi" not in data.columns:
+        if "rsi14" not in data.columns:
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.HOLD,
@@ -39,14 +39,14 @@ class RSIStrategy(BaseStrategy):
                 reason="RSI를 판단할 데이터가 없습니다.",
             )
 
-        current_rsi = data.iloc[-1]["rsi"]
+        current_rsi = data.iloc[-1]["rsi14"]
 
         if pd.isna(current_rsi):
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.HOLD,
                 confidence=0.0,
-                reason="최근 RSI 값이 결측치입니다.",
+                reason="최근 RSI(14) 값이 결측치입니다.",
             )
 
         current_rsi = float(current_rsi)
