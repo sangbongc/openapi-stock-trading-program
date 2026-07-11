@@ -4,7 +4,8 @@ import sqlite3
 from typing import Any
 
 from config import DB_PATH
-
+from datetime import datetime
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +123,20 @@ def create_tables() -> None:
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_daily_prices_date
                 ON daily_prices (date DESC)
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                stock_code TEXT NOT NULL,
+                side TEXT NOT NULL,
+                order_type TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                price INTEGER NOT NULL,
+                order_no TEXT,
+                status TEXT NOT NULL,
+                message_code TEXT,
+                message TEXT)
             """)
 
         logger.info("데이터베이스 테이블 생성 완료")
@@ -551,3 +566,209 @@ def clear_daily_prices() -> int:
     except sqlite3.Error:
         logger.exception("일봉 데이터 삭제 중 데이터베이스 오류 발생")
         raise
+
+
+def save_order(
+    stock_code: str,
+    side: str,
+    order_type: str,
+    quantity: int,
+    price: int,
+    status: str,
+    order_no: Optional[str] = None,
+    message_code: Optional[str] = None,
+    message: Optional[str] = None,
+) -> int:
+    """
+    주문 요청 및 결과를 orders 테이블에 저장한다.
+
+    Parameters
+    ----------
+    stock_code : str
+        6자리 종목코드
+
+    side : str
+        BUY 또는 SELL
+
+    order_type : str
+        MARKET 또는 LIMIT
+
+    quantity : int
+        주문 수량
+
+    price : int
+        주문 가격. 시장가는 0
+
+    status : str
+        SUCCESS 또는 FAILED
+
+    order_no : str, optional
+        증권사에서 반환한 주문번호
+
+    message_code : str, optional
+        API 응답 메시지 코드
+
+    message : str, optional
+        API 응답 메시지
+
+    Returns
+    -------
+    int
+        저장된 주문 기록의 ID
+    """
+    stock_code = str(stock_code).strip()
+    side = side.upper().strip()
+    order_type = order_type.upper().strip()
+    status = status.upper().strip()
+
+    if len(stock_code) != 6 or not stock_code.isdigit():
+        raise ValueError(
+            "stock_code는 숫자로 된 6자리 종목코드여야 합니다."
+        )
+
+    if side not in {"BUY", "SELL"}:
+        raise ValueError("side는 BUY 또는 SELL이어야 합니다.")
+
+    if order_type not in {"MARKET", "LIMIT"}:
+        raise ValueError(
+            "order_type은 MARKET 또는 LIMIT이어야 합니다."
+        )
+
+    if isinstance(quantity, bool) or not isinstance(quantity, int):
+        raise TypeError("quantity는 정수여야 합니다.")
+
+    if quantity <= 0:
+        raise ValueError("quantity는 1 이상이어야 합니다.")
+
+    if isinstance(price, bool) or not isinstance(price, int):
+        raise TypeError("price는 정수여야 합니다.")
+
+    if price < 0:
+        raise ValueError("price는 0 이상이어야 합니다.")
+
+    if order_type == "LIMIT" and price <= 0:
+        raise ValueError(
+            "지정가 주문의 price는 1 이상이어야 합니다."
+        )
+
+    if status not in {"SUCCESS", "FAILED"}:
+        raise ValueError(
+            "status는 SUCCESS 또는 FAILED이어야 합니다."
+        )
+
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO orders (
+                created_at,
+                stock_code,
+                side,
+                order_type,
+                quantity,
+                price,
+                order_no,
+                status,
+                message_code,
+                message
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                created_at,
+                stock_code,
+                side,
+                order_type,
+                quantity,
+                price,
+                order_no,
+                status,
+                message_code,
+                message,
+            ),
+        )
+
+        conn.commit()
+
+        return cursor.lastrowid
+
+    finally:
+        conn.close()
+
+def fetch_orders(
+    stock_code: Optional[str] = None,
+    limit: int = 100,
+) -> list[dict]:
+    """
+    최근 주문 기록을 조회한다.
+
+    Parameters
+    ----------
+    stock_code : str, optional
+        특정 종목만 조회할 때 사용하는 종목코드
+
+    limit : int, default=100
+        최대 조회 건수
+
+    Returns
+    -------
+    list[dict]
+        주문 기록 목록
+    """
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        raise TypeError("limit은 정수여야 합니다.")
+
+    if limit <= 0:
+        raise ValueError("limit은 1 이상이어야 합니다.")
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+
+    try:
+        cursor = conn.cursor()
+
+        if stock_code is None:
+            cursor.execute(
+                """
+                SELECT *
+                FROM orders
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+
+        else:
+            stock_code = str(stock_code).strip()
+
+            if len(stock_code) != 6 or not stock_code.isdigit():
+                raise ValueError(
+                    "stock_code는 숫자로 된 "
+                    "6자리 종목코드여야 합니다."
+                )
+
+            cursor.execute(
+                """
+                SELECT *
+                FROM orders
+                WHERE stock_code = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (
+                    stock_code,
+                    limit,
+                ),
+            )
+
+        rows = cursor.fetchall()
+
+        return [dict(row) for row in rows]
+
+    finally:
+        conn.close()
