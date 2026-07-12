@@ -647,3 +647,175 @@ def test_sync_open_orders_continues_after_error(
     assert results[1]["execution_status"] == "FILLED"
 
     assert mock_sync_order.call_count == 2
+@patch(
+    "trading.execution_manager.update_order_execution"
+)
+@patch(
+    "trading.execution_manager.save_execution"
+)
+@patch(
+    "trading.execution_manager.inquire_daily_orders"
+)
+@patch(
+    "trading.execution_manager.fetch_order_by_order_no"
+)
+def test_sync_order_refreshes_position_after_new_fill(
+    mock_fetch_order: Mock,
+    mock_inquire_orders: Mock,
+    mock_save_execution: Mock,
+    mock_update_order: Mock,
+):
+    local_order = LOCAL_ORDER.copy()
+
+    mock_fetch_order.return_value = local_order
+
+    mock_inquire_orders.return_value = {
+        "rt_cd": "0",
+        "output1": [
+            {
+                "odno": "0000012345",
+                "tot_ccld_qty": "4",
+                "avg_prvs": "70000",
+                "cncl_yn": "N",
+                "ord_dvsn_name": "시장가",
+                "rjct_rson": "",
+                "ord_dt": "20260712",
+                "ord_tmd": "103000",
+            }
+        ],
+    }
+
+    mock_save_execution.return_value = 1
+    mock_position_refresh = Mock()
+
+    manager = ExecutionManager(
+        position_refresher=mock_position_refresh,
+    )
+
+    result = manager.sync_order("0000012345")
+
+    mock_position_refresh.assert_called_once_with()
+
+    assert result["position_refreshed"] is True
+    assert result["position_refresh_error"] is None
+@patch(
+    "trading.execution_manager.update_order_execution"
+)
+@patch(
+    "trading.execution_manager.save_execution"
+)
+@patch(
+    "trading.execution_manager.inquire_daily_orders"
+)
+@patch(
+    "trading.execution_manager.fetch_order_by_order_no"
+)
+def test_sync_order_does_not_refresh_without_new_fill(
+    mock_fetch_order: Mock,
+    mock_inquire_orders: Mock,
+    mock_save_execution: Mock,
+    mock_update_order: Mock,
+):
+    local_order = LOCAL_ORDER.copy()
+    local_order["execution_status"] = "PARTIAL"
+    local_order["filled_quantity"] = 4
+    local_order["remaining_quantity"] = 6
+    local_order["average_fill_price"] = 70000
+
+    mock_fetch_order.return_value = local_order
+
+    mock_inquire_orders.return_value = {
+        "rt_cd": "0",
+        "output1": [
+            {
+                "odno": "0000012345",
+                "tot_ccld_qty": "4",
+                "avg_prvs": "70000",
+                "cncl_yn": "N",
+                "ord_dvsn_name": "시장가",
+                "rjct_rson": "",
+            }
+        ],
+    }
+
+    mock_position_refresh = Mock()
+
+    manager = ExecutionManager(
+        position_refresher=mock_position_refresh,
+    )
+
+    result = manager.sync_order("0000012345")
+
+    mock_position_refresh.assert_not_called()
+
+    assert result["position_refreshed"] is False
+    assert result["position_refresh_error"] is None
+@patch(
+    "trading.execution_manager.update_order_execution"
+)
+@patch(
+    "trading.execution_manager.save_execution"
+)
+@patch(
+    "trading.execution_manager.inquire_daily_orders"
+)
+@patch(
+    "trading.execution_manager.fetch_order_by_order_no"
+)
+def test_sync_order_keeps_execution_when_position_refresh_fails(
+    mock_fetch_order: Mock,
+    mock_inquire_orders: Mock,
+    mock_save_execution: Mock,
+    mock_update_order: Mock,
+):
+    mock_fetch_order.return_value = LOCAL_ORDER.copy()
+
+    mock_inquire_orders.return_value = {
+        "rt_cd": "0",
+        "output1": [
+            {
+                "odno": "0000012345",
+                "tot_ccld_qty": "4",
+                "avg_prvs": "70000",
+                "cncl_yn": "N",
+                "ord_dvsn_name": "시장가",
+                "rjct_rson": "",
+                "ord_dt": "20260712",
+                "ord_tmd": "103000",
+            }
+        ],
+    }
+
+    mock_save_execution.return_value = 1
+
+    mock_position_refresh = Mock(
+        side_effect=RuntimeError(
+            "계좌 잔고 조회 실패"
+        )
+    )
+
+    manager = ExecutionManager(
+        position_refresher=mock_position_refresh,
+    )
+
+    result = manager.sync_order("0000012345")
+
+    mock_save_execution.assert_called_once()
+    mock_update_order.assert_called_once()
+    mock_position_refresh.assert_called_once()
+
+    assert result["execution_status"] == "PARTIAL"
+    assert result["execution_id"] == 1
+    assert result["position_refreshed"] is False
+    assert (
+        result["position_refresh_error"]
+        == "계좌 잔고 조회 실패"
+    )
+def test_execution_manager_rejects_invalid_position_refresher():
+    with pytest.raises(
+        TypeError,
+        match="호출 가능한 함수",
+    ):
+        ExecutionManager(
+            position_refresher="not-callable",
+        )

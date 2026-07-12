@@ -1,7 +1,8 @@
 from __future__ import annotations
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Any
+from typing import Any,Callable
+from trading.position_manager import PositionManager
 
 from api import inquire_daily_orders
 from database import (
@@ -47,7 +48,20 @@ class ExecutionManager:
     한국투자증권 서버의 주문체결 내역과
     로컬 orders 테이블을 동기화한다.
     """
+    def __init__(
+        self,
+        position_refresher: Callable[[], Any] | None = None, position_manager: PositionManager | None = None,
+    ) -> None:
+        if (
+            position_refresher is not None
+            and not callable(position_refresher)
+        ):
+            raise TypeError(
+                "position_refresher는 호출 가능한 함수여야 합니다."
+            )
 
+        self._position_refresher = position_refresher
+        self.position_manager = position_manager
     FINAL_STATUSES = {
         "FILLED",
         "CANCELLED",
@@ -193,6 +207,19 @@ class ExecutionManager:
                 average_fill_price=current_average_fill_price,
                 execution_status=current_execution_status,
             )
+        position_refreshed = False
+        position_refresh_error = None
+
+        if (
+            newly_filled_quantity > 0
+            and self._position_refresher is not None
+        ):
+            try:
+                self._position_refresher()
+                position_refreshed = True
+
+            except Exception as exc:
+                position_refresh_error = str(exc)    
 
         return {
             "order_no": str(order_no),
@@ -212,6 +239,8 @@ class ExecutionManager:
             "execution_status": current_execution_status,
             "execution_id": execution_id,
             "changed": changed,
+            "position_refreshed": position_refreshed,
+            "position_refresh_error": position_refresh_error,
         }
     def sync_open_orders(
         self,
@@ -405,6 +434,8 @@ class ExecutionManager:
             ),
             "execution_id": None,
             "changed": False,
+            "position_refreshed": False,
+            "position_refresh_error": None,
             "message": (
                 "증권사 체결 조회 결과에서 주문을 찾지 못해 "
                 "기존 상태를 유지했습니다."
