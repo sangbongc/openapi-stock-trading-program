@@ -9,6 +9,7 @@ from .execution_manager import (
     ExecutionManager,
     ExecutionResult,
 )
+from .trading_engine import TradingEngine
 __all__ = [
     "ExecutionManager",
     "ExecutionResult",
@@ -17,4 +18,5 @@ __all__ = [
     "Position",
     "PositionManager",
     "PositionManagerError",
+    "TradingEngine",
 ]
