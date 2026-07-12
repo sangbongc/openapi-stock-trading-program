@@ -10,6 +10,11 @@ from .execution_manager import (
     ExecutionResult,
 )
 from .trading_engine import TradingEngine
+from .trading_controller import (
+    TradingController,
+    TradingStatus,
+)
+
 __all__ = [
     "ExecutionManager",
     "ExecutionResult",
@@ -19,4 +24,6 @@ __all__ = [
     "PositionManager",
     "PositionManagerError",
     "TradingEngine",
+    "TradingController",
+    "TradingStatus",
 ]
