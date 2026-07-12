@@ -45,8 +45,8 @@ class StrategyEngine:
     def __init__(
         self,
         strategies: Iterable[BaseStrategy],
-        buy_threshold: float = 0.3,
-        sell_threshold: float = -0.3,
+        buy_threshold: float = 0.2,
+        sell_threshold: float = -0.2,
     ) -> None:
         """
         Parameters

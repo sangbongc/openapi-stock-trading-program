@@ -72,8 +72,8 @@ def build_controller() -> TradingController:
 
     strategy_engine = StrategyEngine(
         strategies=strategies,
-        buy_threshold=0.3,
-        sell_threshold=-0.3,
+        buy_threshold=0.2,
+        sell_threshold=-0.2,
     )
 
     position_manager = PositionManager(
@@ -189,11 +189,101 @@ def print_trading_results(
             "처리 사유 없음",
         )
 
-        print(f"[{display_name}]")
         print(f"신호: {signal}")
         print(f"처리: {action}")
         print(f"주문 생성: {ordered}")
         print(f"사유: {reason}")
+
+        strategy_result = result.get("strategy_result")
+
+        if strategy_result is not None:
+            print("[전략 엔진 상세 결과]")
+
+            final_signal = getattr(
+                strategy_result,
+                "final_signal",
+                None,
+            )
+            final_score = getattr(
+                strategy_result,
+                "final_score",
+                None,
+            )
+
+            if final_signal is not None:
+                print(
+                    "최종 전략 신호: "
+                    f"{normalize_signal(final_signal)}"
+                )
+
+            if final_score is not None:
+                print(
+                    f"최종 점수: {final_score:.4f}"
+                )
+
+            individual_results = getattr(
+                strategy_result,
+                "results",
+                None,
+            )
+
+            if individual_results is None:
+                individual_results = getattr(
+                    strategy_result,
+                    "strategy_results",
+                    None,
+                )
+
+            if individual_results is not None:
+                
+                    if isinstance(individual_results, dict):
+                        result_items = individual_results.items()
+                    else:
+                        result_items = enumerate(individual_results)
+
+                    for strategy_name, individual_result in result_items:
+                        if isinstance(individual_result, dict):
+                            individual_signal = individual_result.get(
+                                "signal"
+                            )
+                            confidence = individual_result.get(
+                                "confidence"
+                            )
+                            individual_reason = individual_result.get(
+                                "reason",
+                                "사유 없음",
+                            )
+                        else:
+                            individual_signal = getattr(
+                                individual_result,
+                                "signal",
+                                None,
+                            )
+                            confidence = getattr(
+                                individual_result,
+                                "confidence",
+                                None,
+                            )
+                            individual_reason = getattr(
+                                individual_result,
+                                "reason",
+                                "사유 없음",
+                            )
+
+                        print(f"- 전략: {strategy_name}")
+                        print(
+                            "  신호: "
+                            f"{normalize_signal(individual_signal)}"
+                        )
+
+                        if confidence is not None:
+                            print(
+                                f"  신뢰도: {confidence:.4f}"
+                            )
+
+                        print(
+                            f"  사유: {individual_reason}"
+                        )
         print()
 
 def print_collect_results(

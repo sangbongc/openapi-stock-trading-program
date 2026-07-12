@@ -57,7 +57,11 @@ def main():
         ]
     )
 
-    engine = StrategyEngine(strategies)
+    engine = StrategyEngine(
+    strategies=strategies,
+    buy_threshold=0.2,
+    sell_threshold=-0.2,
+)
 
     for stock_code, stock_name in STOCKS:
         print("=" * 70)
@@ -109,6 +113,7 @@ def main():
 
             print(f"전략: {strategy.name}")
             print(f"신호: {result.signal.value}")
+            print(f"신뢰도: {result.confidence:.4f}")
             print(f"사유: {result.reason}")
             print("-" * 40)
 
@@ -117,6 +122,14 @@ def main():
         print()
         print("[StrategyEngine 최종 결과]")
         print(f"최종 신호: {engine_result.final_signal.value}")
+        print(
+    f"종합 점수: "
+    f"{engine_result.confidence_score:.4f}"
+)
+        print(
+    f"최종 신뢰도: "
+    f"{engine_result.final_confidence:.4f}"
+)
         print()
 
 
