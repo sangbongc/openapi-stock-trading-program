@@ -8,6 +8,7 @@ APP_SECRET = os.getenv("KIS_APP_SECRET")
 BASE_URL = os.getenv("KIS_BASE_URL")
 ACCOUNT_NO = os.getenv("KIS_ACCOUNT_NO")
 
+IS_VIRTUAL=True
 DB_PATH = "data/trading.db"
 TOKEN_PATH = "data/token.json"
 CHECK_INTERVAL = 60

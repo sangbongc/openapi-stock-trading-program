@@ -64,6 +64,7 @@ def get_connection() -> sqlite3.Connection:
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
 
     return conn
 
@@ -155,6 +156,30 @@ def create_tables() -> None:
 
                 message_code TEXT,
                     message TEXT)
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                order_no TEXT NOT NULL,
+                stock_code TEXT NOT NULL,
+                side TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                price REAL NOT NULL,
+                executed_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (order_id)
+                    REFERENCES orders(id)
+                    ON DELETE CASCADE,
+
+                UNIQUE (
+                    order_no,
+                    quantity,
+                    price,
+                    executed_at
+                )
+            )
             """)
 
         logger.info("데이터베이스 테이블 생성 완료")
@@ -741,42 +766,44 @@ def save_order(
         cursor = conn.cursor()
 
         cursor.execute(
-            """
-            INSERT INTO orders (
-                created_at,
-                updated_at,
-                stock_code,
-                side,
-                order_type,
-                quantity,
-                price,
-                order_no,
-                status,
-                execution_status,
-                filled_quantity,
-                average_fill_price,
-                message_code,
-                message
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                created_at,
-                stock_code,
-                side,
-                order_type,
-                quantity,
-                price,
-                order_no,
-                status,
-                execution_status,
-                filled_quantity,
-                remaining_quantity,
-                average_fill_price,
-                message_code,
-                message,
-            ),
-        )
+    """
+    INSERT INTO orders (
+        created_at,
+        updated_at,
+        stock_code,
+        side,
+        order_type,
+        quantity,
+        price,
+        order_no,
+        status,
+        execution_status,
+        filled_quantity,
+        remaining_quantity,
+        average_fill_price,
+        message_code,
+        message
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+    (
+        created_at,
+        updated_at,
+        stock_code,
+        side,
+        order_type,
+        quantity,
+        price,
+        order_no,
+        status,
+        execution_status,
+        filled_quantity,
+        remaining_quantity,
+        average_fill_price,
+        message_code,
+        message,
+    ),
+)
 
         conn.commit()
 
@@ -947,6 +974,438 @@ def migrate_orders_table() -> None:
     except Exception:
         conn.rollback()
         raise
+
+    finally:
+        conn.close()
+
+def fetch_order_by_order_no(
+    order_no: str,
+) -> dict[str, Any] | None:
+    """
+    한국투자증권 주문번호로 로컬 주문을 조회한다.
+    """
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM orders
+            WHERE order_no = ?
+            """,
+            (order_no,),
+        )
+
+        row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        return dict(row)
+
+    finally:
+        conn.close()
+
+
+def fetch_open_orders() -> list[dict[str, Any]]:
+    """
+    체결이 아직 종료되지 않은 접수 주문을 조회한다.
+    """
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM orders
+            WHERE status = 'ACCEPTED'
+              AND execution_status IN (
+                  'PENDING',
+                  'PARTIAL'
+              )
+              AND order_no IS NOT NULL
+            ORDER BY id ASC
+            """
+        )
+
+        return [
+            dict(row)
+            for row in cursor.fetchall()
+        ]
+
+    finally:
+        conn.close()
+
+
+def update_order_execution(
+    order_no: str,
+    filled_quantity: int,
+    remaining_quantity: int,
+    average_fill_price: float,
+    execution_status: str,
+) -> None:
+    """
+    orders 테이블의 체결 상태를 업데이트한다.
+
+    status는 주문 접수 결과인 ACCEPTED/FAILED를 유지하고,
+    execution_status만 체결 진행 상태로 변경한다.
+    """
+    order_no = str(order_no).strip()
+    execution_status = str(execution_status).upper().strip()
+
+    allowed_execution_statuses = {
+        "NOT_APPLICABLE",
+        "PENDING",
+        "PARTIAL",
+        "FILLED",
+        "CANCELLED",
+        "REJECTED",
+    }
+
+    if not order_no:
+        raise ValueError("order_no는 비어 있을 수 없습니다.")
+
+    if execution_status not in allowed_execution_statuses:
+        raise ValueError(
+            "지원하지 않는 execution_status입니다: "
+            f"{execution_status}"
+        )
+
+    if filled_quantity < 0:
+        raise ValueError(
+            "filled_quantity는 0 이상이어야 합니다."
+        )
+
+    if remaining_quantity < 0:
+        raise ValueError(
+            "remaining_quantity는 0 이상이어야 합니다."
+        )
+
+    if average_fill_price < 0:
+        raise ValueError(
+            "average_fill_price는 0 이상이어야 합니다."
+        )
+
+    updated_at = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            UPDATE orders
+            SET
+                updated_at = ?,
+                execution_status = ?,
+                filled_quantity = ?,
+                remaining_quantity = ?,
+                average_fill_price = ?
+            WHERE order_no = ?
+            """,
+            (
+                updated_at,
+                execution_status,
+                filled_quantity,
+                remaining_quantity,
+                average_fill_price,
+                order_no,
+            ),
+        )
+
+        if cursor.rowcount == 0:
+            raise ValueError(
+                f"주문번호 {order_no}에 해당하는 "
+                "주문이 없습니다."
+            )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
+
+def save_execution(
+    order_id: int,
+    order_no: str,
+    stock_code: str,
+    side: str,
+    quantity: int,
+    price: float,
+    executed_at: str,
+) -> int | None:
+    """
+    체결 이력 한 건을 executions 테이블에 저장한다.
+
+    동일한 주문번호, 수량, 가격, 체결시각의 데이터가 이미 존재하면
+    중복 저장하지 않고 None을 반환한다.
+
+    Returns
+    -------
+    int | None
+        새로 저장된 executions 테이블의 ID.
+        중복 데이터이면 None.
+    """
+    if order_id <= 0:
+        raise ValueError("order_id는 1 이상이어야 합니다.")
+
+    if not order_no.strip():
+        raise ValueError("order_no는 비어 있을 수 없습니다.")
+
+    if not stock_code.strip():
+        raise ValueError("stock_code는 비어 있을 수 없습니다.")
+
+    normalized_side = side.upper()
+
+    if normalized_side not in {"BUY", "SELL"}:
+        raise ValueError("side는 BUY 또는 SELL이어야 합니다.")
+
+    if quantity <= 0:
+        raise ValueError("체결수량은 1 이상이어야 합니다.")
+
+    if price < 0:
+        raise ValueError("체결가격은 0 이상이어야 합니다.")
+
+    if not executed_at.strip():
+        raise ValueError("executed_at은 비어 있을 수 없습니다.")
+
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO executions (
+                order_id,
+                order_no,
+                stock_code,
+                side,
+                quantity,
+                price,
+                executed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                order_id,
+                order_no,
+                stock_code,
+                normalized_side,
+                quantity,
+                price,
+                executed_at,
+            ),
+        )
+
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return None
+
+        return int(cursor.lastrowid)
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
+
+def fetch_executions_by_order_no(
+    order_no: str,
+) -> list[dict[str, Any]]:
+    """
+    특정 주문번호에 해당하는 체결내역을 조회한다.
+    """
+    if not order_no.strip():
+        raise ValueError("order_no는 비어 있을 수 없습니다.")
+
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                order_id,
+                order_no,
+                stock_code,
+                side,
+                quantity,
+                price,
+                executed_at,
+                created_at
+            FROM executions
+            WHERE order_no = ?
+            ORDER BY executed_at ASC, id ASC
+            """,
+            (order_no,),
+        )
+
+        return [
+            dict(row)
+            for row in cursor.fetchall()
+        ]
+
+    finally:
+        conn.close()
+
+def fetch_executions_by_order_id(
+    order_id: int,
+) -> list[dict[str, Any]]:
+    """
+    로컬 orders 테이블의 ID를 기준으로 체결내역을 조회한다.
+    """
+    if order_id <= 0:
+        raise ValueError("order_id는 1 이상이어야 합니다.")
+
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                order_id,
+                order_no,
+                stock_code,
+                side,
+                quantity,
+                price,
+                executed_at,
+                created_at
+            FROM executions
+            WHERE order_id = ?
+            ORDER BY executed_at ASC, id ASC
+            """,
+            (order_id,),
+        )
+
+        return [
+            dict(row)
+            for row in cursor.fetchall()
+        ]
+
+    finally:
+        conn.close()
+
+def fetch_executions(
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """
+    최근 체결내역을 조회한다.
+    """
+    if limit <= 0:
+        raise ValueError("limit은 1 이상이어야 합니다.")
+
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                order_id,
+                order_no,
+                stock_code,
+                side,
+                quantity,
+                price,
+                executed_at,
+                created_at
+            FROM executions
+            ORDER BY executed_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+
+        return [
+            dict(row)
+            for row in cursor.fetchall()
+        ]
+
+    finally:
+        conn.close()
+
+def get_total_executed_quantity(
+    order_no: str,
+) -> int:
+    """
+    특정 주문번호의 executions 테이블 누적 체결수량을 반환한다.
+    """
+    if not order_no.strip():
+        raise ValueError("order_no는 비어 있을 수 없습니다.")
+
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM executions
+            WHERE order_no = ?
+            """,
+            (order_no,),
+        )
+
+        result = cursor.fetchone()
+
+        return int(result[0])
+
+    finally:
+        conn.close()
+
+def get_average_execution_price(
+    order_no: str,
+) -> float:
+    """
+    특정 주문번호의 가중평균 체결가격을 반환한다.
+    """
+    if not order_no.strip():
+        raise ValueError("order_no는 비어 있을 수 없습니다.")
+
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                COALESCE(SUM(quantity * price), 0),
+                COALESCE(SUM(quantity), 0)
+            FROM executions
+            WHERE order_no = ?
+            """,
+            (order_no,),
+        )
+
+        total_amount, total_quantity = cursor.fetchone()
+
+        if total_quantity == 0:
+            return 0.0
+
+        return float(total_amount) / int(total_quantity)
 
     finally:
         conn.close()

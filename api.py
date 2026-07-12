@@ -15,7 +15,8 @@ from config import (
     APP_SECRET,
     BASE_URL,
     REQUEST_INTERVAL,
-    TOKEN_PATH
+    TOKEN_PATH,
+    IS_VIRTUAL
 )
 REQUEST_TIMEOUT = 10
 TOKEN_EXPIRY_BUFFER_MINUTES = 5
@@ -1166,3 +1167,139 @@ def get_account_balance(
         "position_count": len(positions),
         "positions": positions,
     }
+
+def inquire_daily_orders(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    order_no: str = "",
+    stock_code: str = "",
+    side: str = "ALL",
+    executed_only: bool = False,
+) -> dict[str, Any]:
+    """
+    한국투자증권 주식일별주문체결조회 API를 호출한다.
+
+    Parameters
+    ----------
+    start_date
+        조회 시작일. YYYYMMDD 형식.
+        None이면 당일 날짜를 사용한다.
+
+    end_date
+        조회 종료일. YYYYMMDD 형식.
+        None이면 당일 날짜를 사용한다.
+
+    order_no
+        특정 주문번호만 조회할 때 사용한다.
+        전체 주문을 조회하려면 빈 문자열을 전달한다.
+
+    stock_code
+        특정 종목만 조회할 때 사용한다.
+        전체 종목을 조회하려면 빈 문자열을 전달한다.
+
+    side
+        ALL, BUY, SELL 중 하나.
+
+    executed_only
+        True이면 체결 주문만 조회하고,
+        False이면 미체결 주문까지 포함한다.
+
+    Returns
+    -------
+    dict
+        한국투자증권 API의 원본 JSON 응답.
+    """
+    today = datetime.now().strftime("%Y%m%d")
+
+    start_date = start_date or today
+    end_date = end_date or today
+
+    side_code_map = {
+        "ALL": "00",
+        "SELL": "01",
+        "BUY": "02",
+    }
+
+    normalized_side = side.upper()
+
+    if normalized_side not in side_code_map:
+        raise ValueError("side는 ALL, BUY, SELL 중 하나여야 합니다.")
+
+    if len(start_date) != 8 or not start_date.isdigit():
+        raise ValueError("start_date는 YYYYMMDD 형식이어야 합니다.")
+
+    if len(end_date) != 8 or not end_date.isdigit():
+        raise ValueError("end_date는 YYYYMMDD 형식이어야 합니다.")
+
+    access_token = get_access_token()
+
+    url = f"{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+
+    # 실전투자 기준 TR ID.
+    # 모의투자를 사용하는 경우 config에서 별도로 관리하는 것이 좋다.
+    if IS_VIRTUAL:
+        tr_id = "VTTC8001R"
+    else:
+        tr_id = "TTTC8001R"
+
+    headers = {
+        "content-type": "application/json; charset=utf-8",
+        "authorization": f"Bearer {access_token}",
+        "appkey": APP_KEY,
+        "appsecret": APP_SECRET,
+        "tr_id": tr_id,
+        "custtype": "P",
+    }
+
+    params = {
+        "CANO": ACCOUNT_NO,
+        "ACNT_PRDT_CD": ACCOUNT_PRODUCT_CODE,
+        "INQR_STRT_DT": start_date,
+        "INQR_END_DT": end_date,
+        "SLL_BUY_DVSN_CD": side_code_map[normalized_side],
+        "INQR_DVSN": "00",
+        "PDNO": stock_code,
+        "CCLD_DVSN": "01" if executed_only else "00",
+        "ORD_GNO_BRNO": "",
+        "ODNO": order_no,
+        "INQR_DVSN_3": "00",
+        "INQR_DVSN_1": "",
+        "CTX_AREA_FK100": "",
+        "CTX_AREA_NK100": "",
+    }
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=10,
+        )
+        response.raise_for_status()
+
+    except requests.Timeout as exc:
+        raise RuntimeError(
+            "주문체결 조회 요청 시간이 초과되었습니다."
+        ) from exc
+
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"주문체결 조회 API 요청에 실패했습니다: {exc}"
+        ) from exc
+
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            "주문체결 조회 응답을 JSON으로 변환하지 못했습니다."
+        ) from exc
+
+    if result.get("rt_cd") != "0":
+        message_code = result.get("msg_cd", "")
+        message = result.get("msg1", "알 수 없는 API 오류")
+
+        raise RuntimeError(
+            f"주문체결 조회 실패: [{message_code}] {message}"
+        )
+
+    return result
