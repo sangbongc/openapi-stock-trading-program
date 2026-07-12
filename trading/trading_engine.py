@@ -469,9 +469,20 @@ class TradingEngine:
     ) -> Signal:
         """
         StrategyEngine 결과에서 최종 신호를 추출한다.
+
+        지원 형식
+        ---------
+        1. EngineResult처럼 final_signal 속성을 가진 객체
+        2. final_signal 키를 가진 딕셔너리
+        3. Signal 객체
+        4. BUY / SELL / HOLD 문자열
         """
-        if isinstance(strategy_result, dict):
+        if hasattr(strategy_result, "final_signal"):
+            signal = strategy_result.final_signal
+
+        elif isinstance(strategy_result, dict):
             signal = strategy_result.get("final_signal")
+
         else:
             signal = strategy_result
 
@@ -481,6 +492,7 @@ class TradingEngine:
         if isinstance(signal, str):
             try:
                 return Signal(signal.upper())
+
             except ValueError as error:
                 raise ValueError(
                     f"지원하지 않는 전략 신호입니다: {signal}"
@@ -489,18 +501,20 @@ class TradingEngine:
         raise ValueError(
             "전략 결과에서 final_signal을 확인할 수 없습니다."
         )
-
     @staticmethod
     def _is_order_accepted(
         order_result: Any,
     ) -> bool:
         """
-        OrderManager의 결과에서 주문 접수 성공 여부를 확인한다.
+        OrderManager 결과에서 주문 접수 성공 여부를 확인한다.
         """
         if not isinstance(order_result, dict):
             return False
 
-        return bool(order_result.get("ACCEPTED", False))
+        return (
+            order_result.get("success") is True
+            and order_result.get("status") == "ACCEPTED"
+        )
 
     @staticmethod
     def _validate_stock_code(

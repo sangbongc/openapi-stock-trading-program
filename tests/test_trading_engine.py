@@ -4,7 +4,7 @@ import pandas as pd
 
 from strategies.signal import Signal
 from trading.trading_engine import TradingEngine
-
+from strategies.strategy_engine import EngineResult
 
 def make_test_data(
     row_count: int = 120,
@@ -48,11 +48,12 @@ def test_buy_signal_orders_when_not_holding():
     position_manager.get_position.return_value = None
 
     order_manager.buy.return_value = {
-        "ACCEPTED": True,
-        "order_id": 1,
-        "order_no": "0000012345",
-        "side": "BUY",
-    }
+    "success": True,
+    "status": "ACCEPTED",
+    "order_id": 1,
+    "order_no": "0000012345",
+    "side": "BUY",
+}
 
     engine = TradingEngine(
         strategy_engine=strategy_engine,
@@ -128,11 +129,12 @@ def test_sell_signal_orders_all_position_quantity():
     }
 
     order_manager.sell.return_value = {
-        "ACCEPTED": True,
-        "order_id": 2,
-        "order_no": "0000012346",
-        "side": "SELL",
-    }
+    "success": True,
+    "status": "ACCEPTED",
+    "order_id": 2,
+    "order_no": "0000012346",
+    "side": "SELL",
+}
 
     engine = TradingEngine(
         strategy_engine=strategy_engine,
@@ -300,9 +302,10 @@ def test_rejected_buy_order_returns_ordered_false():
     position_manager.get_position.return_value = None
 
     order_manager.buy.return_value = {
-        "ACCEPTED": False,
-        "message": "주문 실패",
-    }
+    "success": False,
+    "status": "REJECTED",
+    "message": "주문 실패",
+}
 
     engine = TradingEngine(
         strategy_engine=strategy_engine,
@@ -467,6 +470,38 @@ def test_run_all_returns_empty_list_for_empty_stocks():
 
     data_provider.assert_not_called()
     strategy_engine.run.assert_not_called()
+    order_manager.buy.assert_not_called()
+    order_manager.sell.assert_not_called()
+def test_extracts_signal_from_engine_result():
+    strategy_engine = Mock()
+    order_manager = Mock()
+    position_manager = Mock()
+    data_provider = Mock()
+
+    data_provider.return_value = make_test_data()
+
+    strategy_engine.run.return_value = EngineResult(
+        final_signal=Signal.HOLD,
+        confidence_score=0.0,
+        final_confidence=1.0,
+        strategy_results={},
+    )
+
+    position_manager.get_position.return_value = None
+
+    engine = TradingEngine(
+        strategy_engine=strategy_engine,
+        order_manager=order_manager,
+        position_manager=position_manager,
+        data_provider=data_provider,
+    )
+
+    result = engine.run_stock("005930")
+
+    assert result["signal"] == Signal.HOLD
+    assert result["action"] == "HOLD"
+    assert result["ordered"] is False
+
     order_manager.buy.assert_not_called()
     order_manager.sell.assert_not_called()
 
