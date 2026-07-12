@@ -1,5 +1,5 @@
 import pandas as pd
-
+import pytest
 from strategies.base_strategy import BaseStrategy
 from strategies.signal import Signal
 from strategies.result import StrategyResult
@@ -57,8 +57,7 @@ def test_engine_returns_buy() -> None:
 
     result = engine.run(create_test_dataframe())
 
-    expected_score = (0.8 + 0.7 + 0.0) / 3
-
+    expected_score = (0.8 + 0.7) / 2
     assert result.final_signal == Signal.BUY
     assert result.confidence_score == expected_score
     assert result.final_confidence == expected_score
@@ -80,7 +79,7 @@ def test_engine_returns_sell() -> None:
 
     result = engine.run(create_test_dataframe())
 
-    expected_score = (-0.9 - 0.6 + 0.0) / 3
+    expected_score = (-0.9 - 0.6) / 2
 
     assert result.final_signal == Signal.SELL
     assert result.confidence_score == expected_score
@@ -100,14 +99,22 @@ def test_engine_returns_hold_when_signals_conflict() -> None:
         sell_threshold=-0.3,
     )
 
-    result = engine.run(create_test_dataframe())
+    result = engine.run(
+        create_test_dataframe()
+    )
 
-    expected_score = (0.8 - 0.7 + 0.0) / 3
+    # HOLD는 적극적인 매수·매도 신호가 아니므로
+    # 평균 계산의 분모에서 제외한다.
+    expected_score = (0.8 - 0.7) / 2
     expected_confidence = 1.0 - abs(expected_score)
 
     assert result.final_signal == Signal.HOLD
-    assert result.confidence_score == expected_score
-    assert result.final_confidence == expected_confidence
+    assert result.confidence_score == pytest.approx(
+        expected_score
+    )
+    assert result.final_confidence == pytest.approx(
+        expected_confidence
+    )
 
 
 def test_engine_rejects_empty_strategy_list() -> None:
@@ -184,15 +191,64 @@ def test_engine_rejects_duplicate_strategy_names() -> None:
         raise AssertionError(
             "전략 이름이 중복되면 ValueError가 발생해야 합니다."
         )
+def test_engine_returns_buy_when_one_strategy_buys() -> None:
+    strategies = [
+        FakeStrategy("MA", Signal.HOLD, 0.5),
+        FakeStrategy("RSI", Signal.BUY, 0.8),
+        FakeStrategy("MACD", Signal.HOLD, 0.5),
+        FakeStrategy(
+            "Bollinger",
+            Signal.HOLD,
+            0.5,
+        ),
+    ]
 
+    engine = StrategyEngine(
+        strategies=strategies,
+        buy_threshold=0.3,
+        sell_threshold=-0.3,
+    )
+
+    result = engine.run(
+        create_test_dataframe()
+    )
+
+    assert result.final_signal == Signal.BUY
+    assert result.confidence_score == 0.8
+    assert result.final_confidence == 0.8
+def test_engine_returns_hold_when_all_hold() -> None:
+    strategies = [
+        FakeStrategy("MA", Signal.HOLD, 0.5),
+        FakeStrategy("RSI", Signal.HOLD, 0.6),
+        FakeStrategy("MACD", Signal.HOLD, 0.7),
+    ]
+
+    engine = StrategyEngine(
+        strategies=strategies,
+        buy_threshold=0.3,
+        sell_threshold=-0.3,
+    )
+
+    result = engine.run(
+        create_test_dataframe()
+    )
+
+    assert result.final_signal == Signal.HOLD
+    assert result.confidence_score == 0.0
+    assert result.final_confidence == 1.0
 
 if __name__ == "__main__":
     test_engine_returns_buy()
     test_engine_returns_sell()
     test_engine_returns_hold_when_signals_conflict()
+    test_engine_returns_buy_when_one_strategy_buys()
+    test_engine_returns_hold_when_all_hold()
     test_engine_rejects_empty_strategy_list()
     test_engine_rejects_empty_dataframe()
     test_engine_rejects_invalid_confidence()
     test_engine_rejects_duplicate_strategy_names()
 
-    print("모든 StrategyEngine 테스트를 통과했습니다.")
+    print(
+        "모든 StrategyEngine 테스트를 "
+        "통과했습니다."
+    )

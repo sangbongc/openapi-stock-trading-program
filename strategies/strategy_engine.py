@@ -111,6 +111,7 @@ class StrategyEngine:
 
         strategy_results: dict[str, StrategyResult] = {}
         weighted_confidence_sum = 0.0
+        active_signal_count = 0
 
         for strategy in self.strategies:
             result = strategy.generate_signal(data)
@@ -129,14 +130,20 @@ class StrategyEngine:
                 )
 
             strategy_results[strategy_name] = result
-            weighted_confidence_sum += self._convert_to_signed_confidence(
-                result
+
+            weighted_confidence_sum += (
+                self._convert_to_signed_confidence(result)
             )
 
-        confidence_score = (
-            weighted_confidence_sum / len(self.strategies)
-        )
+            if result.signal != Signal.HOLD:
+                active_signal_count += 1
 
+        if active_signal_count == 0:
+            confidence_score = 0.0
+        else:
+            confidence_score = (
+                weighted_confidence_sum / active_signal_count
+            )
         final_signal = self._determine_final_signal(confidence_score)
 
         final_confidence = self._calculate_final_confidence(
