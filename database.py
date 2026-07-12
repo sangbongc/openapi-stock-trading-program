@@ -128,15 +128,33 @@ def create_tables() -> None:
                 CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+
                 stock_code TEXT NOT NULL,
                 side TEXT NOT NULL,
                 order_type TEXT NOT NULL,
+
                 quantity INTEGER NOT NULL,
                 price INTEGER NOT NULL,
+
                 order_no TEXT,
+
                 status TEXT NOT NULL,
+
+                execution_status TEXT NOT NULL
+                    DEFAULT 'NOT_APPLICABLE',
+
+                filled_quantity INTEGER NOT NULL
+                    DEFAULT 0,
+
+                 remaining_quantity INTEGER NOT NULL
+                    DEFAULT 0,
+
+                average_fill_price REAL NOT NULL
+                    DEFAULT 0,
+
                 message_code TEXT,
-                message TEXT)
+                    message TEXT)
             """)
 
         logger.info("데이터베이스 테이블 생성 완료")
@@ -652,9 +670,6 @@ def save_order(
         "LIMIT",
     }
 
-    if status == "REJECTED":
-        allowed_sides.add("UNKNOWN")
-        allowed_order_types.add("UNKNOWN")
 
     if side not in allowed_sides:
         raise ValueError(
@@ -672,13 +687,6 @@ def save_order(
         raise TypeError(
             "quantity는 정수여야 합니다."
         )
-
-    if status == "REJECTED":
-        if quantity < 0:
-            raise ValueError(
-                "REJECTED 상태의 quantity는 "
-                "0 이상이어야 합니다."
-            )
     elif quantity <= 0:
         raise ValueError(
             "quantity는 1 이상이어야 합니다."
@@ -716,7 +724,17 @@ def save_order(
     created_at = datetime.now().strftime(
         "%Y-%m-%d %H:%M:%S"
     )
+    if status == "ACCEPTED":
+            execution_status = "PENDING"
+            remaining_quantity = quantity
+    else:
+            execution_status = "NOT_APPLICABLE"
+            remaining_quantity = 0
 
+    filled_quantity = 0
+    average_fill_price = 0
+    updated_at = created_at
+    
     conn = get_connection()
 
     try:
@@ -726,6 +744,7 @@ def save_order(
             """
             INSERT INTO orders (
                 created_at,
+                updated_at,
                 stock_code,
                 side,
                 order_type,
@@ -733,10 +752,13 @@ def save_order(
                 price,
                 order_no,
                 status,
+                execution_status,
+                filled_quantity,
+                average_fill_price,
                 message_code,
                 message
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_at,
@@ -747,6 +769,10 @@ def save_order(
                 price,
                 order_no,
                 status,
+                execution_status,
+                filled_quantity,
+                remaining_quantity,
+                average_fill_price,
                 message_code,
                 message,
             ),
@@ -832,6 +858,95 @@ def fetch_orders(
         rows = cursor.fetchall()
 
         return [dict(row) for row in rows]
+
+    finally:
+        conn.close()
+
+def migrate_orders_table() -> None:
+    """
+    기존 orders 테이블에 체결 관리용 컬럼을 추가한다.
+
+    이미 존재하는 컬럼은 추가하지 않는다.
+    """
+    conn = get_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("PRAGMA table_info(orders)")
+        columns = {
+            row["name"]
+            for row in cursor.fetchall()
+        }
+
+        if "updated_at" not in columns:
+            cursor.execute(
+                """
+                ALTER TABLE orders
+                ADD COLUMN updated_at TEXT
+                """
+            )
+
+        if "execution_status" not in columns:
+            cursor.execute(
+                """
+                ALTER TABLE orders
+                ADD COLUMN execution_status TEXT
+                NOT NULL DEFAULT 'NOT_APPLICABLE'
+                """
+            )
+
+        if "filled_quantity" not in columns:
+            cursor.execute(
+                """
+                ALTER TABLE orders
+                ADD COLUMN filled_quantity INTEGER
+                NOT NULL DEFAULT 0
+                """
+            )
+
+        if "remaining_quantity" not in columns:
+            cursor.execute(
+                """
+                ALTER TABLE orders
+                ADD COLUMN remaining_quantity INTEGER
+                NOT NULL DEFAULT 0
+                """
+            )
+
+        if "average_fill_price" not in columns:
+            cursor.execute(
+                """
+                ALTER TABLE orders
+                ADD COLUMN average_fill_price REAL
+                NOT NULL DEFAULT 0
+                """
+            )
+
+        cursor.execute(
+            """
+            UPDATE orders
+            SET updated_at = created_at
+            WHERE updated_at IS NULL
+            """
+        )
+
+        cursor.execute(
+            """
+            UPDATE orders
+            SET
+                execution_status = 'PENDING',
+                remaining_quantity = quantity
+            WHERE status = 'ACCEPTED'
+              AND execution_status = 'NOT_APPLICABLE'
+            """
+        )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
 
     finally:
         conn.close()

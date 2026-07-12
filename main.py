@@ -12,21 +12,7 @@ def main():
     end_date = datetime.now().strftime("%Y%m%d")
     start_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
 
-    for stock in STOCK_UNIVERSE:
-        raw_daily = get_daily_price(
-            token=token,
-            stock_code=stock["code"],
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-        daily_rows = parse_daily_price(
-            raw_daily,
-            stock_code=stock["code"],
-            stock_name=stock["name"],
-        )
-
-        save_daily_prices(daily_rows)
+   
 
 
 if __name__ == "__main__":
