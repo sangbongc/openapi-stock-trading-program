@@ -1,254 +1,329 @@
-# KIS OpenAPI Rule-Based Auto Trading Program
+# OpenAPI Stock Trading Program
 
-## 📌 Project Overview
+> **Python 기반 한국투자증권 OpenAPI 자동매매 시스템**
 
-한국투자증권 OpenAPI를 활용한 **규칙 기반(Rule-Based) 자동매매 프로그램**입니다.
+한국투자증권 OpenAPI를 활용하여 **실제 모의투자 계좌에서 동작하는 Rule-Based 자동매매 시스템**입니다.
 
-단순한 API 호출 예제가 아니라 실제 자동매매 시스템을 목표로 개발하고 있으며, 모듈화를 통해 유지보수성과 확장성을 고려한 구조로 설계하였습니다.
+단순한 API 호출 예제가 아니라 **시장 데이터 수집 → 전략 생성 → 주문 → 체결 관리 → 계좌 동기화 → 자동 반복 실행**까지 하나의 구조로 구현하는 것을 목표로 개발하고 있습니다.
 
-주요 목표는 다음과 같습니다.
-
-* 한국투자증권 OpenAPI 기반 자동매매
-* SQLite 기반 데이터 관리
-* 기술적 지표 자동 계산
-* 전략(Strategy) 기반 매매 의사결정
-* 주문 및 주문 이력 관리
-* 향후 백테스트 및 포트폴리오 분석 지원
+향후에는 OpenDART API를 연동하여 재무정보와 공시 데이터를 활용한 투자 의사결정 기능과 백테스팅, 머신러닝 기반 전략 최적화를 추가할 예정입니다.
 
 ---
 
-# Tech Stack
+# Features
 
-* Python 3
-* SQLite
-* Pandas
-* KIS OpenAPI
-* unittest / unittest.mock
-* Git / GitHub
+## Data Collection
 
----
-
-# Project Structure
-
-```text
-kis-rule-based-trading-program/
-
-├── api.py
-├── config.py
-├── database.py
-├── parser.py
-├── indicator.py
-├── universe.py
-│
-├── trading/
-│   └── order_manager.py
-│
-├── strategies/
-│   ├── __init__.py
-│   ├── base_strategy.py
-│   ├── signal.py
-│   ├── result.py
-│   ├── strategy_factory.py
-│   ├── strategy_engine.py
-│   ├── ma_cross.py
-│   ├── rsi.py
-│   ├── macd.py
-│   └── bollinger.py
-│
-├── tests/
-│   ├── test_strategy_factory.py
-│   ├── test_strategy_engine.py
-│   ├── test_order_manager.py
-│   └── ...
-│
-├── trading.db
-├── README.md
-└── requirements.txt
-```
-
----
-
-# Current Features
-
-## OpenAPI
-
-* OAuth2 인증 및 Access Token 발급
-* Access Token 캐싱
+* 한국투자 OpenAPI 연동
 * 현재가 조회
-* 일봉 데이터 조회
-* 시장가 / 지정가 매수 주문
-* 시장가 / 지정가 매도 주문
-
----
-
-## SQLite Database
-
-구현 완료
-
-* 현재가 저장
-* 일봉 저장
-* 주문 내역 저장
-* 종목별 일봉 조회
-* 데이터 일괄 저장(Bulk Insert)
+* 일봉 데이터 수집
+* SQLite 저장
 
 ---
 
 ## Technical Indicators
 
-직접 Pandas를 이용하여 계산하도록 구현
+현재 구현된 기술적 지표
 
-지원 지표
-
-* Moving Average
+* Moving Average (MA)
 * RSI
 * MACD
-* Bollinger Bands
+* Bollinger Band
 
----
-
-## Strategy System
-
-전략을 독립적인 클래스로 구현
-
-현재 지원 전략
-
-* Moving Average Cross
-* RSI
-* MACD
-* Bollinger Bands
-
-공통 인터페이스
-
-* BaseStrategy
-
-결과 객체
-
-* StrategyResult
-* Signal Enum
+모든 지표는 Pandas를 이용하여 직접 계산하며 Strategy Engine에서 공통으로 사용됩니다.
 
 ---
 
 ## Strategy Engine
 
-구현 완료
+현재 구현 전략
 
-기능
-
-* 여러 전략 실행
-* 전략 결과 통합
-* 최종 BUY / SELL / HOLD 결정
-* 다수결 기반 최종 Signal 생성
-
----
-
-## Strategy Factory
-
-구현 완료
-
-기능
-
-* 전략 객체 생성
-* 전략 리스트 생성
-* 이름 기반 전략 관리
-
----
-
-## Order Manager
-
-구현 완료
-
-기능
-
-* 매수 주문 실행
-* 매도 주문 실행
-* 입력값 검증
-* 주문 성공 / 실패 처리
-* 주문 결과 SQLite 저장
-* API 예외 처리
-
-현재 OrderManager는 **주문 접수(ACCEPTED)** 까지의 역할을 담당합니다.
-
----
-
-# Testing
-
-단위 테스트 완료
-
-테스트 대상
-
-* Strategy Factory
-* Strategy Engine
 * MA Cross Strategy
 * RSI Strategy
 * MACD Strategy
 * Bollinger Band Strategy
-* OrderManager
 
-테스트 항목
+### 특징
 
-* 정상 동작
-* 입력값 검증
-* 예외 처리
-* Mock을 이용한 API 호출 테스트
-* Mock을 이용한 DB 저장 테스트
+* Strategy Pattern 적용
+* Strategy Factory 구현
+* 가중치 기반 Signal Aggregation
+* Threshold 기반 최종 매매 신호 결정
+
+최종 신호
+
+* BUY
+* SELL
+* HOLD
+
+---
+
+## Trading Engine
+
+Trading Engine은 아래 순서로 동작합니다.
+
+```
+Strategy Engine
+        ↓
+Trading Decision
+        ↓
+Order Manager
+        ↓
+Execution Manager
+        ↓
+Position Manager
+```
+
+자동으로
+
+* 보유 여부 확인
+* 매수 가능 여부 판단
+* 매도 가능 수량 확인
+* 주문 생성
+
+을 수행합니다.
+
+---
+
+## Order Management
+
+지원 기능
+
+* 시장가 매수
+* 시장가 매도
+* 지정가 주문
+* 주문 DB 저장
+* 주문 상태 관리
+
+주문 상태
+
+* ACCEPTED
+* FAILED
+* REJECTED
+
+---
+
+## Execution Management
+
+지원 기능
+
+* 주문 체결 조회
+* 체결 내역 저장
+* 평균 체결가 저장
+* 주문 상태 자동 갱신
+
+Orders 테이블과 Executions 테이블이 자동으로 동기화됩니다.
+
+---
+
+## Position Management
+
+실제 계좌 기준으로
+
+* 보유 종목
+* 평균 매입 단가
+* 평가 금액
+* 예수금
+
+을 조회하고 SQLite와 동기화합니다.
+
+---
+
+## Trading Controller
+
+CLI 기반 자동매매 컨트롤러를 제공합니다.
+
+지원 명령어
+
+```
+collect
+run
+start
+stop
+sync
+status
+account
+positions
+manual
+results
+help
+exit
+```
+
+---
+
+# Automatic Trading
+
+자동매매는 두 개의 작업을 독립적으로 수행합니다.
+
+## Strategy Loop (기본 300초)
+
+```
+Position Refresh
+        ↓
+Strategy
+        ↓
+Order
+```
+
+## Execution Sync Loop (기본 10초)
+
+```
+Execution Sync
+        ↓
+Orders Update
+        ↓
+Position Refresh
+```
+
+자동매매가 실행되는 동안 체결 내역을 주기적으로 확인하여 실제 계좌와 데이터베이스를 지속적으로 동기화합니다.
+
+---
+
+# Project Structure
+
+```
+.
+├── api.py
+├── config.py
+├── database.py
+├── indicator.py
+├── main.py
+├── parser.py
+├── universe.py
+│
+├── database/
+│
+├── strategies/
+│   ├── base_strategy.py
+│   ├── strategy_engine.py
+│   ├── strategy_factory.py
+│   ├── ma_cross.py
+│   ├── rsi_strategy.py
+│   ├── macd_strategy.py
+│   ├── bollinger_strategy.py
+│
+├── trading/
+│   ├── trading_controller.py
+│   ├── trading_engine.py
+│   ├── order_manager.py
+│   ├── execution_manager.py
+│   └── position_manager.py
+│
+└── tests/
+```
+
+---
+
+# Tech Stack
+
+* Python
+* SQLite
+* Pandas
+* 한국투자 OpenAPI
+* Pytest
+
+---
+
+# System Workflow
+
+```
+Market Data
+      ↓
+SQLite Database
+      ↓
+Technical Indicators
+      ↓
+Strategy Engine
+      ↓
+Trading Engine
+      ↓
+Order Manager
+      ↓
+KIS OpenAPI
+      ↓
+Execution Manager
+      ↓
+Position Manager
+      ↓
+Database Synchronization
+```
+
+---
+
+# Tested Features
+
+다음 기능들의 동작을 실제 모의투자 계좌에서 검증했습니다.
+
+* OpenAPI 인증
+* 현재가 조회
+* 일봉 데이터 수집
+* SQLite 저장
+* 기술적 지표 계산
+* Strategy Engine
+* Strategy Factory
+* Trading Engine
+* Order Manager
+* Execution Manager
+* Position Manager
+* 수동 매수
+* 수동 매도
+* 자동 주문
+* 자동 체결 동기화
+* 실제 계좌와 DB 동기화
 
 ---
 
 # Development Roadmap
 
-## Phase 1 (Completed)
+## ✅ Completed
 
-* [x] OpenAPI 연동
-* [x] SQLite 구축
-* [x] Parser 구현
-* [x] Indicator 구현
-* [x] Strategy 구현
-* [x] Strategy Factory
-* [x] Strategy Engine
-* [x] Order Manager
-
----
-
-## Phase 2 (In Progress)
-
-* [ ] Execution Manager
-* [ ] Position Manager
-* [ ] Order Fill Tracking
-* [ ] Portfolio Management
-* [ ] Risk Management
+* OpenAPI Authentication
+* SQLite Database
+* Current Price Collection
+* Daily Price Collection
+* Technical Indicators
+* Strategy Engine
+* Strategy Factory
+* Trading Engine
+* Order Manager
+* Execution Manager
+* Position Manager
+* Trading Controller
+* Manual Buy / Sell
+* Automatic Trading Loop
+* Periodic Execution Synchronization
+* Real Account Synchronization
 
 ---
 
-## Phase 3 (Planned)
+## 🚧 In Progress
 
-* [ ] Market Scanner
-* [ ] Backtesting
-* [ ] DART OpenAPI 연동
-* [ ] Streamlit Dashboard
-* [ ] Portfolio Analytics
-* [ ] Performance Report
-* [ ] Trade Log Visualization
+* Logging System
+* Performance Statistics
+* Portfolio Analytics
 
 ---
 
-# Future Improvements
+## 📌 Planned
 
-* 실시간 체결 관리
-* 부분 체결 처리
-* 계좌 잔고 및 보유 종목 동기화
-* 주문 상태 자동 갱신
-* 다중 전략 조합
-* 리스크 기반 포지션 사이징
-* 실시간 자동매매
-* 백테스트 엔진 구축
-* 공시(DART) 데이터 기반 투자 의사결정
+* Backtesting Engine
+* OpenDART Integration
+* Financial Statement Database
+* Disclosure Analysis
+* Machine Learning Strategy Optimization
+* Streamlit Dashboard
+* WebSocket Real-Time Trading
 
 ---
 
-# Project Goal
+# Future Goals
 
-본 프로젝트는 한국투자증권 OpenAPI를 활용한 단순 API 예제가 아니라,
+향후 OpenDART 기반 재무정보 분석 프로젝트와 통합하여
 
-**실제 운용 가능한 자동매매 시스템 구축**을 목표로 개발 중입니다.
+* 기술적 분석
+* 재무제표 분석
+* 공시 분석
+* 머신러닝 기반 전략 최적화
 
-또한 객체지향 설계, 모듈화, 단위 테스트를 적극 활용하여 유지보수성과 확장성을 고려한 구조를 지향하고 있습니다.
+를 하나의 투자 플랫폼으로 발전시키는 것을 목표로 하고 있습니다.
