@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from enum import Enum
 from typing import Any, Iterable
-
+import time
 
 class TradingStatus(str, Enum):
     """
@@ -36,6 +36,7 @@ class TradingController:
         self,
         trading_engine: Any,
         execution_manager: Any,
+        order_manager: Any,
         position_manager: Any,
         stock_universe: Iterable[str | dict[str, Any]],
         interval_seconds: float = 300.0,
@@ -64,9 +65,28 @@ class TradingController:
             raise ValueError(
                 "execution_manager는 None일 수 없습니다."
             )
+        if order_manager is None:
+            raise ValueError(
+                "order_manager는 None일 수 없습니다."
+    )
         if position_manager is None:
             raise ValueError(
                 "position_manager는 None일 수 없습니다."
+            )
+        if not callable(
+            getattr(order_manager, "buy", None)
+        ):
+            raise TypeError(
+                "order_manager에는 호출 가능한 "
+                "buy() 메서드가 필요합니다."
+            )
+
+        if not callable(
+            getattr(order_manager, "sell", None)
+        ):
+            raise TypeError(
+                "order_manager에는 호출 가능한 "
+                "sell() 메서드가 필요합니다."
             )
 
         if not callable(
@@ -143,6 +163,7 @@ class TradingController:
 
         self.trading_engine = trading_engine
         self.execution_manager = execution_manager
+        self.order_manager = order_manager
         self.position_manager = position_manager
         self.stock_universe = list(stock_universe)
         self.interval_seconds = float(interval_seconds)
@@ -337,6 +358,76 @@ class TradingController:
 
         finally:
             self._run_lock.release()
+    def sync(self) -> dict[str, Any]:
+        """
+        미체결 주문의 체결 상태만 동기화한다.
+
+        전략 실행은 하지 않는다.
+        """
+        with self._state_lock:
+            if self._status != TradingStatus.STOPPED:
+                return {
+                    "success": False,
+                    "message": (
+                        "자동매매 실행 중에는 "
+                        "체결 동기화를 수행할 수 없습니다."
+                    ),
+                }
+
+        if not self._run_lock.acquire(blocking=False):
+            return {
+                "success": False,
+                "message": (
+                    "다른 작업이 실행 중입니다."
+                ),
+            }
+
+        try:
+            execution_results = (
+                self.execution_manager.sync_open_orders()
+            )
+
+            if execution_results is None:
+                execution_results = []
+
+            self.last_execution_results = execution_results
+
+            changed = sum(
+                1
+                for result in execution_results
+                if result.get("changed")
+            )
+
+            errors = sum(
+                1
+                for result in execution_results
+                if result.get("execution_status") == "ERROR"
+            )
+            if changed > 0:
+                self.position_manager.refresh()
+
+            return {
+                "success": True,
+                "message": (
+                    "체결 동기화를 완료했습니다."
+                ),
+                "execution_results": execution_results,
+                "changed": changed,
+                "errors": errors,
+            }
+
+        except Exception as error:
+            self.last_error = str(error)
+
+            return {
+                "success": False,
+                "message": (
+                    f"체결 동기화 중 오류가 발생했습니다: {error}"
+                ),
+            }
+
+        finally:
+            self._run_lock.release()
 
     def get_status(self) -> str:
         """
@@ -368,6 +459,133 @@ class TradingController:
             ),
             "last_results": self.last_results,
         }
+    def manual_buy(
+            self,
+            stock_code: str,
+            quantity: int,
+            order_type: str = "MARKET",
+            price: int = 0,
+        ) -> dict[str, Any]:
+            """
+            사용자가 직접 입력한 조건으로 매수 주문을 실행한다.
+
+            전략 신호는 사용하지 않으며 OrderManager를 통해
+            주문 API를 호출하고 주문 내역을 DB에 저장한다.
+            """
+            with self._state_lock:
+                if self._status != TradingStatus.STOPPED:
+                    return {
+                        "success": False,
+                        "status": "BLOCKED",
+                        "message": (
+                            "반복 자동매매가 실행 중입니다. "
+                            "stop 명령 후 수동 주문을 실행하세요."
+                        ),
+                    }
+
+            if not self._run_lock.acquire(blocking=False):
+                return {
+                    "success": False,
+                    "status": "BLOCKED",
+                    "message": (
+                        "다른 매매 작업이 실행 중이어서 "
+                        "수동 매수할 수 없습니다."
+                    ),
+                }
+
+            try:
+                order_result = self.order_manager.buy(
+                    stock_code=stock_code,
+                    quantity=quantity,
+                    price=price,
+                    order_type=order_type,
+                )
+
+                return self._sync_manual_order(
+                    order_result
+                )
+
+            except Exception as error:
+                self.last_error = str(error)
+
+                return {
+                    "success": False,
+                    "status": "ERROR",
+                    "message": (
+                        "수동 매수 주문 중 오류가 "
+                        f"발생했습니다: {error}"
+                    ),
+                }
+
+            finally:
+                self._run_lock.release()
+    
+    def manual_sell(
+            self,
+            stock_code: str,
+            quantity: int,
+            order_type: str = "MARKET",
+            price: int = 0,
+        ) -> dict[str, Any]:
+            """
+            사용자가 직접 입력한 조건으로 매도 주문을 실행한다.
+
+            주문 전에 계좌 보유 상태를 다시 조회하고
+            매도 가능 수량을 검증한다.
+            """
+            with self._state_lock:
+                if self._status != TradingStatus.STOPPED:
+                    return {
+                        "success": False,
+                        "status": "BLOCKED",
+                        "message": (
+                            "반복 자동매매가 실행 중입니다. "
+                            "stop 명령 후 수동 주문을 실행하세요."
+                        ),
+                    }
+
+            if not self._run_lock.acquire(blocking=False):
+                return {
+                    "success": False,
+                    "status": "BLOCKED",
+                    "message": (
+                        "다른 매매 작업이 실행 중이어서 "
+                        "수동 매도할 수 없습니다."
+                    ),
+                }
+
+            try:
+                self.position_manager.refresh()
+
+                self.position_manager.validate_sell_quantity(
+                    stock_code=stock_code,
+                    quantity=quantity,
+                )
+
+                order_result = self.order_manager.sell(
+                    stock_code=stock_code,
+                    quantity=quantity,
+                    price=price,
+                    order_type=order_type,
+                )
+
+                return self._sync_manual_order(
+                    order_result
+                )
+            except Exception as error:
+                self.last_error = str(error)
+
+                return {
+                    "success": False,
+                    "status": "ERROR",
+                    "message": (
+                        "수동 매도 주문 중 오류가 "
+                        f"발생했습니다: {error}"
+                    ),
+                }
+
+            finally:
+                self._run_lock.release()
     def get_account(self) -> dict[str, Any]:
         """
         실제 계좌 잔고를 다시 조회하고
@@ -415,7 +633,142 @@ class TradingController:
 
         finally:
             self._run_lock.release()
+    def get_positions(
+            self,
+            refresh: bool = True,
+        ) -> dict[str, Any]:
+            """
+            현재 보유 종목을 반환한다.
+            """
+            with self._state_lock:
+                if self._status != TradingStatus.STOPPED:
+                    return {
+                        "success": False,
+                        "message": (
+                            "반복 자동매매가 실행 중입니다. "
+                            "stop 명령 후 조회하세요."
+                        ),
+                        "positions": {},
+                    }
 
+            if not self._run_lock.acquire(blocking=False):
+                return {
+                    "success": False,
+                    "message": (
+                        "다른 매매 작업이 실행 중이어서 "
+                        "보유 종목을 조회할 수 없습니다."
+                    ),
+                    "positions": {},
+                }
+
+            try:
+                if refresh:
+                    positions = self.position_manager.refresh()
+                else:
+                    positions = (
+                        self.position_manager.get_all_positions()
+                    )
+
+                return {
+                    "success": True,
+                    "message": "보유 종목 조회를 완료했습니다.",
+                    "positions": positions,
+                }
+
+            except Exception as error:
+                self.last_error = str(error)
+
+                return {
+                    "success": False,
+                    "message": (
+                        "보유 종목 조회 중 오류가 "
+                        f"발생했습니다: {error}"
+                    ),
+                    "positions": {},
+                }
+
+            finally:
+                self._run_lock.release()
+    def _sync_manual_order(
+        self,
+        order_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        수동 주문이 정상 접수된 경우 체결 상태를 조회한다.
+
+        증권사 주문조회 반영 지연을 고려해
+        짧은 간격으로 최대 두 번 확인한다.
+        """
+        accepted = bool(
+            order_result.get("ACCEPTED")
+            or order_result.get("accepted")
+        )
+
+        if not accepted:
+            return order_result
+
+        order_no = str(
+            order_result.get("order_no") or ""
+        ).strip()
+
+        if not order_no:
+            order_result["execution_sync"] = None
+            order_result["execution_sync_error"] = (
+                "주문번호가 없어 체결 상태를 "
+                "동기화하지 못했습니다."
+            )
+            return order_result
+
+        last_execution_result = None
+        last_error = None
+
+        for attempt in range(2):
+            # 주문 체결조회 API 반영 시간을 확보한다.
+            time.sleep(1.5)
+
+            try:
+                execution_result = (
+                    self.execution_manager.sync_order(
+                        order_no
+                    )
+                )
+
+                last_execution_result = execution_result
+                last_error = None
+
+                execution_status = str(
+                    execution_result.get(
+                        "execution_status",
+                        "PENDING",
+                    )
+                )
+
+                if execution_status in {
+                    "FILLED",
+                    "PARTIAL",
+                    "CANCELLED",
+                    "REJECTED",
+                }:
+                    break
+
+            except Exception as error:
+                last_error = str(error)
+
+                # 첫 시도가 실패한 경우에만 한 번 더 시도한다.
+                if attempt == 1:
+                    break
+
+        order_result["execution_sync"] = (
+            last_execution_result
+        )
+        order_result["execution_sync_error"] = last_error
+
+        if last_execution_result is not None:
+            self.last_execution_results = [
+                last_execution_result
+            ]
+
+        return order_result
     def shutdown(
         self,
         timeout: float | None = None,
@@ -486,11 +839,8 @@ class TradingController:
         실행 순서
         ---------
         1. 기존 미완료 주문 체결 동기화
-        2. PositionManager 갱신
+        2. 실제 계좌 포지션 갱신
         3. 전체 종목 전략 및 주문 실행
-
-        PositionManager 갱신은 현재 ExecutionManager 내부의
-        position_refresher 설정을 통해 수행된다.
         """
         execution_results = (
             self.execution_manager.sync_open_orders()
@@ -508,6 +858,9 @@ class TradingController:
         self.last_execution_results = (
             execution_results
         )
+
+        # 체결 반영 후 실제 계좌 보유 상태를 다시 조회한다.
+        self.position_manager.refresh()
 
         trading_results = self.trading_engine.run_all(
             self.stock_universe
