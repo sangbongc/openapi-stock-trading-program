@@ -107,6 +107,7 @@ def build_controller() -> TradingController:
     return TradingController(
         trading_engine=trading_engine,
         execution_manager=execution_manager,
+        position_manager=position_manager,
         stock_universe=STOCK_UNIVERSE,
         interval_seconds=TRADING_INTERVAL_SECONDS,
     )
@@ -132,6 +133,7 @@ def print_help() -> None:
     print("stop    반복 자동매매 중지")
     print("run     전체 종목을 한 번만 실행")
     print("collect 과거 일봉 데이터 수집")
+    print("balance 현재 계좌 잔고 및 보유 종목 조회")
     print("status  현재 프로그램 상태 확인")
     print("results 최근 종목별 실행 결과 확인")
     print("help    명령어 도움말")
@@ -462,6 +464,164 @@ def print_last_results(
     results = state.get("last_results", [])
 
     print_trading_results(results)
+def print_account(
+    result: dict[str, Any],
+) -> None:
+    """
+    TradingController의 계좌 조회 결과를 출력한다.
+    """
+
+    if not result.get("success"):
+        print()
+        print(result.get(
+            "message",
+            "계좌 조회에 실패했습니다.",
+        ))
+        return
+
+    summary = result.get("account_summary", {})
+    positions = result.get("positions", {})
+
+    def first_value(
+        *keys: str,
+        default: int = 0,
+    ) -> Any:
+        """
+        계좌 요약에서 사용 가능한 첫 번째 키의
+        값을 반환한다.
+        """
+        for key in keys:
+            value = summary.get(key)
+
+            if value is not None and value != "":
+                return value
+
+        return default
+
+    def to_int(value: Any) -> int:
+        """
+        문자열 또는 숫자 형태의 금액을
+        출력용 정수로 변환한다.
+        """
+        try:
+            return int(
+                float(
+                    str(value).replace(",", "")
+                )
+            )
+        except (TypeError, ValueError):
+            return 0
+
+    cash = to_int(
+        first_value(
+            "cash",
+            "deposit",
+            "dnca_tot_amt",
+        )
+    )
+
+    d1_cash = to_int(
+        first_value(
+            "d1_cash",
+            "d1_deposit",
+            "nxdy_excc_amt",
+        )
+    )
+
+    d2_cash = to_int(
+        first_value(
+            "d2_cash",
+            "d2_deposit",
+            "prvs_rcdl_excc_amt",
+        )
+    )
+
+    stock_evaluation_amount = to_int(
+        first_value(
+            "stock_evaluation_amount",
+            "stock_evaluation",
+            "scts_evlu_amt",
+        )
+    )
+
+    total_evaluation_amount = to_int(
+        first_value(
+            "total_evaluation_amount",
+            "total_evaluation",
+            "tot_evlu_amt",
+        )
+    )
+
+    total_profit_loss = to_int(
+        first_value(
+            "total_profit_loss",
+            "evaluation_profit_loss",
+            "evlu_pfls_smtl_amt",
+        )
+    )
+
+    print()
+    print("계좌 조회 결과")
+    print("-" * 44)
+    print(f"예수금: {cash:,}원")
+    print(f"D+1 예수금: {d1_cash:,}원")
+    print(f"D+2 예수금: {d2_cash:,}원")
+    print(
+        "주식 평가금액: "
+        f"{stock_evaluation_amount:,}원"
+    )
+    print(
+        "총 평가금액: "
+        f"{total_evaluation_amount:,}원"
+    )
+    print(
+        "총 평가손익: "
+        f"{total_profit_loss:,}원"
+    )
+    print(f"보유 종목 수: {len(positions)}개")
+
+    print()
+    print("[보유 종목]")
+
+    if not positions:
+        print("현재 보유 종목이 없습니다.")
+        return
+
+    for position in positions.values():
+        print("-" * 44)
+        print(
+            f"{position.stock_name} "
+            f"({position.stock_code})"
+        )
+        print(f"보유 수량: {position.quantity:,}주")
+        print(
+            "매도 가능 수량: "
+            f"{position.available_quantity:,}주"
+        )
+        print(
+            "평균 매입가: "
+            f"{float(position.average_price):,.2f}원"
+        )
+        print(
+            "총 매입금액: "
+            f"{position.purchase_amount:,}원"
+        )
+        print(
+            f"현재가: "
+            f"{position.current_price:,}원"
+        )
+        print(
+            "평가금액: "
+            f"{position.evaluation_amount:,}원"
+        )
+        print(
+            "평가손익: "
+            f"{position.profit_loss:,}원"
+        )
+        print(
+            "평가손익률: "
+            f"{float(position.profit_loss_rate):,.2f}%"
+        )
 
 
 def command_loop(
@@ -505,6 +665,9 @@ def command_loop(
             print_run_result(result)
         elif command == "collect":
             run_collection(controller)
+        elif command == "balance":
+            result = controller.get_account()
+            print_account(result)
 
         elif command == "status":
             print_status(

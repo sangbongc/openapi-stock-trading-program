@@ -36,6 +36,7 @@ class TradingController:
         self,
         trading_engine: Any,
         execution_manager: Any,
+        position_manager: Any,
         stock_universe: Iterable[str | dict[str, Any]],
         interval_seconds: float = 300.0,
     ) -> None:
@@ -62,6 +63,42 @@ class TradingController:
         if execution_manager is None:
             raise ValueError(
                 "execution_manager는 None일 수 없습니다."
+            )
+        if position_manager is None:
+            raise ValueError(
+                "position_manager는 None일 수 없습니다."
+            )
+
+        if not callable(
+            getattr(position_manager, "refresh", None)
+        ):
+            raise TypeError(
+                "position_manager에는 호출 가능한 "
+                "refresh() 메서드가 필요합니다."
+            )
+
+        if not callable(
+            getattr(
+                position_manager,
+                "get_all_positions",
+                None,
+            )
+        ):
+            raise TypeError(
+                "position_manager에는 호출 가능한 "
+                "get_all_positions() 메서드가 필요합니다."
+            )
+
+        if not callable(
+            getattr(
+                position_manager,
+                "get_account_summary",
+                None,
+            )
+        ):
+            raise TypeError(
+                "position_manager에는 호출 가능한 "
+                "get_account_summary() 메서드가 필요합니다."
             )
 
         if stock_universe is None:
@@ -106,6 +143,7 @@ class TradingController:
 
         self.trading_engine = trading_engine
         self.execution_manager = execution_manager
+        self.position_manager = position_manager
         self.stock_universe = list(stock_universe)
         self.interval_seconds = float(interval_seconds)
 
@@ -330,6 +368,53 @@ class TradingController:
             ),
             "last_results": self.last_results,
         }
+    def get_account(self) -> dict[str, Any]:
+        """
+        실제 계좌 잔고를 다시 조회하고
+        계좌 요약과 현재 보유 종목을 반환한다.
+
+        자동매매 작업이 진행 중이면 같은 계좌 API를
+        동시에 호출하지 않도록 조회를 제한한다.
+        """
+        if not self._run_lock.acquire(blocking=False):
+            return {
+                "success": False,
+                "message": (
+                    "다른 매매 작업이 실행 중이어서 "
+                    "계좌를 조회할 수 없습니다."
+                ),
+                "account_summary": {},
+                "positions": {},
+            }
+
+        try:
+            positions = self.position_manager.refresh()
+            account_summary = (
+                self.position_manager.get_account_summary()
+            )
+
+            return {
+                "success": True,
+                "message": "계좌 조회를 완료했습니다.",
+                "account_summary": account_summary,
+                "positions": positions,
+            }
+
+        except Exception as error:
+            self.last_error = str(error)
+
+            return {
+                "success": False,
+                "message": (
+                    "계좌를 조회하는 중 오류가 "
+                    f"발생했습니다: {error}"
+                ),
+                "account_summary": {},
+                "positions": {},
+            }
+
+        finally:
+            self._run_lock.release()
 
     def shutdown(
         self,
