@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config import (DEFAULT_BUY_QUANTITY,TRADING_DRY_RUN)
 from api import get_account_balance
 from database import (
     create_tables,
@@ -100,7 +101,8 @@ def build_controller() -> TradingController:
         default_buy_quantity=DEFAULT_BUY_QUANTITY,
         pending_order_checker=has_open_order,
         minimum_data_length=MINIMUM_DATA_LENGTH,
-    )
+        dry_run=TRADING_DRY_RUN,
+        )
 
     return TradingController(
         trading_engine=trading_engine,

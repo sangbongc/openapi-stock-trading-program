@@ -33,7 +33,13 @@ class TradingEngine:
         default_buy_quantity: int = 1,
         pending_order_checker: Callable[[str], bool] | None = None,
         minimum_data_length: int = 120,
+        dry_run: bool = True,
     ):
+        if not isinstance(dry_run, bool):
+            raise TypeError("dry_run은 bool 타입이어야 합니다.")
+
+        self.dry_run = dry_run
+        
         if not isinstance(default_buy_quantity, int):
             raise TypeError(
                 "default_buy_quantity는 정수여야 합니다."
@@ -280,6 +286,19 @@ class TradingEngine:
                 ),
                 strategy_result=strategy_result,
             )
+        if self.dry_run:
+            return self._build_result(
+                stock_code=stock_code,
+                signal=Signal.BUY,
+                action="BUY_SIMULATED",
+                ordered=False,
+                reason=(
+                    f"Dry-run 모드입니다. "
+                    f"{self.default_buy_quantity}주 매수 주문을 "
+                    "실제로 전송하지 않았습니다."
+                ),
+                strategy_result=strategy_result,
+            )
 
         try:
             order_result = self.order_manager.buy(
@@ -344,7 +363,19 @@ class TradingEngine:
                 ),
                 strategy_result=strategy_result,
             )
-
+        if self.dry_run:
+            return self._build_result(
+                stock_code=stock_code,
+                signal=Signal.SELL,
+                action="SELL_SIMULATED",
+                ordered=False,
+                reason=(
+                    f"Dry-run 모드입니다. "
+                    f"보유 수량 {current_quantity}주의 매도 주문을 "
+                    "실제로 전송하지 않았습니다."
+                ),
+                strategy_result=strategy_result,
+            )
         try:
             order_result = self.order_manager.sell(
                 stock_code=stock_code,
