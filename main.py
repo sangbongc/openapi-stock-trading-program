@@ -111,6 +111,7 @@ def build_controller() -> TradingController:
         position_manager=position_manager,
         stock_universe=STOCK_UNIVERSE,
         interval_seconds=TRADING_INTERVAL_SECONDS,
+        sync_interval_seconds=10.0,
     )
 
 
