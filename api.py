@@ -1238,9 +1238,9 @@ def inquire_daily_orders(
     # 실전투자 기준 TR ID.
     # 모의투자를 사용하는 경우 config에서 별도로 관리하는 것이 좋다.
     if IS_VIRTUAL:
-        tr_id = "VTTC8001R"
+        tr_id = "VTTC0081R"
     else:
-        tr_id = "TTTC8001R"
+        tr_id = "TTTC0081R"
 
     headers = {
         "content-type": "application/json; charset=utf-8",
@@ -1257,7 +1257,7 @@ def inquire_daily_orders(
         "INQR_STRT_DT": start_date,
         "INQR_END_DT": end_date,
         "SLL_BUY_DVSN_CD": side_code_map[normalized_side],
-        "INQR_DVSN": "00",
+        "INQR_DVSN": "01",
         "PDNO": stock_code,
         "CCLD_DVSN": "01" if executed_only else "00",
         "ORD_GNO_BRNO": "",
