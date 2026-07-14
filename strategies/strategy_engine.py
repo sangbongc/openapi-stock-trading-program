@@ -48,6 +48,7 @@ class StrategyEngine:
         buy_threshold: float = 0.2,
         sell_threshold: float = -0.2,
         buy_trend_filter_column: str | None = None,
+        strategy_weights: dict[str, float] | None = None,
     ) -> None:
         """
         Parameters
@@ -92,6 +93,10 @@ class StrategyEngine:
                 raise TypeError("buy_trend_filter_column은 문자열 또는 None이어야 합니다.")
             if not buy_trend_filter_column.strip():
                 raise ValueError("buy_trend_filter_column은 빈 문자열일 수 없습니다.")
+
+        self.strategy_weights = self._validate_strategy_weights(
+            strategy_weights
+        )
 
         self.buy_threshold = float(buy_threshold)
         self.sell_threshold = float(sell_threshold)
@@ -139,14 +144,24 @@ class StrategyEngine:
 
             strategy_results[strategy_name] = result
 
-            weighted_confidence_sum += (
-                self._convert_to_signed_confidence(result)
-            )
+            signed_confidence = self._convert_to_signed_confidence(result)
+            if self.strategy_weights is None:
+                weighted_confidence_sum += signed_confidence
+            else:
+                weighted_confidence_sum += (
+                    signed_confidence * self.strategy_weights[strategy_name]
+                )
 
             if result.signal != Signal.HOLD:
                 active_signal_count += 1
 
-        if active_signal_count == 0:
+        if self.strategy_weights is not None:
+            # HOLD는 0점으로 포함한다. 따라서 일부 보조 전략만 신호를
+            # 내는 경우 전체 가중치가 분모에 남아 단독 주문을 억제한다.
+            confidence_score = weighted_confidence_sum / sum(
+                self.strategy_weights.values()
+            )
+        elif active_signal_count == 0:
             confidence_score = 0.0
         else:
             confidence_score = (
@@ -169,6 +184,45 @@ class StrategyEngine:
             final_confidence=final_confidence,
             strategy_results=strategy_results,
         )
+
+    def _validate_strategy_weights(
+        self,
+        strategy_weights: dict[str, float] | None,
+    ) -> dict[str, float] | None:
+        """전략 객체 이름과 일치하는 양수 가중치인지 검증한다."""
+        if strategy_weights is None:
+            return None
+        if not isinstance(strategy_weights, dict):
+            raise TypeError("strategy_weights는 딕셔너리 또는 None이어야 합니다.")
+
+        strategy_names = [
+            getattr(strategy, "name", strategy.__class__.__name__)
+            for strategy in self.strategies
+        ]
+        if len(strategy_names) != len(set(strategy_names)):
+            raise ValueError("전략 이름은 중복될 수 없습니다.")
+
+        expected = set(strategy_names)
+        received = set(strategy_weights)
+        if expected != received:
+            missing = sorted(expected - received)
+            unknown = sorted(received - expected)
+            raise ValueError(
+                "strategy_weights의 전략 이름이 일치하지 않습니다. "
+                f"누락={missing}, 알 수 없음={unknown}"
+            )
+
+        validated: dict[str, float] = {}
+        for name, weight in strategy_weights.items():
+            if (
+                not isinstance(weight, (int, float))
+                or isinstance(weight, bool)
+                or weight <= 0
+            ):
+                raise ValueError(f"{name}의 가중치는 0보다 큰 숫자여야 합니다.")
+            validated[name] = float(weight)
+
+        return validated
 
     def _apply_buy_trend_filter(
         self,

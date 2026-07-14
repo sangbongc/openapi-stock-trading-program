@@ -32,6 +32,12 @@ def main() -> None:
         buy_threshold=0.2,
         sell_threshold=-0.2,
         buy_trend_filter_column="ma60",
+        strategy_weights={
+            "MA Cross": 0.40,
+            "MACD": 0.30,
+            "RSI": 0.15,
+            "Bollinger Band": 0.15,
+        },
     )
 
     engine = BacktestEngine(
