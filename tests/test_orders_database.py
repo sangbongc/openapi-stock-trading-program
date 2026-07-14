@@ -14,7 +14,7 @@ def test_save_success_order():
         order_type="MARKET",
         quantity=1,
         price=0,
-        status="SUCCESS",
+        status="ACCEPTED",
         order_no="0000012345",
         message_code="APBK0013",
         message="주문 전송 완료",
@@ -37,7 +37,7 @@ def test_save_success_order():
     assert saved_order["order_type"] == "MARKET"
     assert saved_order["quantity"] == 1
     assert saved_order["price"] == 0
-    assert saved_order["status"] == "SUCCESS"
+    assert saved_order["status"] == "ACCEPTED"
     assert saved_order["order_no"] == "0000012345"
 
     print("성공 주문 저장 테스트 통과")

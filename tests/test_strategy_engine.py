@@ -237,6 +237,81 @@ def test_engine_returns_hold_when_all_hold() -> None:
     assert result.confidence_score == 0.0
     assert result.final_confidence == 1.0
 
+
+def test_weighted_engine_includes_hold_as_zero() -> None:
+    strategies = [
+        FakeStrategy("MA", Signal.HOLD, 0.0),
+        FakeStrategy("MACD", Signal.HOLD, 0.0),
+        FakeStrategy("RSI", Signal.BUY, 1.0),
+        FakeStrategy("Bollinger", Signal.HOLD, 0.0),
+    ]
+    engine = StrategyEngine(
+        strategies=strategies,
+        buy_threshold=0.2,
+        sell_threshold=-0.2,
+        strategy_weights={
+            "MA": 0.40,
+            "MACD": 0.30,
+            "RSI": 0.15,
+            "Bollinger": 0.15,
+        },
+    )
+
+    result = engine.run(create_test_dataframe())
+
+    assert result.confidence_score == pytest.approx(0.15)
+    assert result.final_signal == Signal.HOLD
+
+
+def test_weighted_engine_cancels_conflicting_trend_signals() -> None:
+    strategies = [
+        FakeStrategy("MA", Signal.BUY, 1.0),
+        FakeStrategy("MACD", Signal.SELL, 1.0),
+    ]
+    engine = StrategyEngine(
+        strategies=strategies,
+        buy_threshold=0.2,
+        sell_threshold=-0.2,
+        strategy_weights={"MA": 0.4, "MACD": 0.3},
+    )
+
+    result = engine.run(create_test_dataframe())
+
+    assert result.confidence_score == pytest.approx(1 / 7)
+    assert result.final_signal == Signal.HOLD
+
+
+def test_trend_filter_blocks_buy_below_ma60() -> None:
+    engine = StrategyEngine(
+        [FakeStrategy("MA", Signal.BUY, 1.0)],
+        buy_trend_filter_column="ma60",
+    )
+    data = pd.DataFrame({"close": [95.0], "ma60": [100.0]})
+
+    result = engine.run(data)
+
+    assert result.final_signal == Signal.HOLD
+
+
+def test_trend_filter_allows_buy_above_ma60() -> None:
+    engine = StrategyEngine(
+        [FakeStrategy("MA", Signal.BUY, 1.0)],
+        buy_trend_filter_column="ma60",
+    )
+    data = pd.DataFrame({"close": [105.0], "ma60": [100.0]})
+
+    result = engine.run(data)
+
+    assert result.final_signal == Signal.BUY
+
+
+def test_strategy_weights_require_exact_strategy_names() -> None:
+    with pytest.raises(ValueError, match="전략 이름이 일치하지 않습니다"):
+        StrategyEngine(
+            [FakeStrategy("MA", Signal.BUY, 1.0)],
+            strategy_weights={"MACD": 1.0},
+        )
+
 if __name__ == "__main__":
     test_engine_returns_buy()
     test_engine_returns_sell()

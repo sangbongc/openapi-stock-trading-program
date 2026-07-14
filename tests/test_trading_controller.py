@@ -21,8 +21,25 @@ TEST_UNIVERSE = [
 ]
 
 
+def make_order_manager() -> Mock:
+    manager = Mock()
+    manager.buy = Mock()
+    manager.sell = Mock()
+    return manager
+
+
+def make_position_manager() -> Mock:
+    manager = Mock()
+    manager.refresh = Mock(return_value={})
+    manager.get_all_positions = Mock(return_value={})
+    manager.get_account_summary = Mock(return_value={})
+    manager.validate_sell_quantity = Mock(return_value=None)
+    return manager
+
+
 def make_controller(
     interval_seconds: float = 0.05,
+    sync_interval_seconds: float = 0.05,
 ) -> tuple[TradingController, Mock, Mock]:
     """
     테스트용 TradingController와 Mock 객체를 생성한다.
@@ -47,8 +64,11 @@ def make_controller(
     controller = TradingController(
         trading_engine=trading_engine,
         execution_manager=execution_manager,
+        order_manager=make_order_manager(),
+        position_manager=make_position_manager(),
         stock_universe=TEST_UNIVERSE,
         interval_seconds=interval_seconds,
+        sync_interval_seconds=sync_interval_seconds,
     )
 
     return (
@@ -133,6 +153,8 @@ def test_run_once_syncs_orders_before_running_stocks():
     controller = TradingController(
         trading_engine=trading_engine,
         execution_manager=execution_manager,
+        order_manager=make_order_manager(),
+        position_manager=make_position_manager(),
         stock_universe=TEST_UNIVERSE,
         interval_seconds=1,
     )
@@ -230,7 +252,9 @@ def test_start_runs_controller_in_worker_thread():
 
     assert controller.get_status() == "RUNNING"
 
-    execution_manager.sync_open_orders.assert_called()
+    assert wait_until(
+        lambda: execution_manager.sync_open_orders.call_count >= 1
+    )
     trading_engine.run_all.assert_called_with(
         TEST_UNIVERSE
     )
@@ -384,7 +408,7 @@ def test_run_once_handles_trading_engine_error():
     )
 
 
-def test_worker_stops_safely_after_cycle_error():
+def test_periodic_sync_error_is_recorded_and_controller_keeps_running():
     (
         controller,
         trading_engine,
@@ -402,14 +426,18 @@ def test_worker_stops_safely_after_cycle_error():
     assert result["success"] is True
 
     assert wait_until(
-        lambda: controller.get_status() == "STOPPED"
+        lambda: (
+            controller.last_error is not None
+            and "자동매매 주기 오류" in controller.last_error
+        )
     )
 
-    assert controller.last_error == (
-        "자동매매 주기 오류"
-    )
+    assert controller.get_status() == "RUNNING"
+    assert "주기적 체결 동기화 중 오류" in controller.last_error
+    assert trading_engine.run_all.call_count >= 1
 
-    trading_engine.run_all.assert_not_called()
+    stop_result = controller.stop(wait=True, timeout=1)
+    assert stop_result["success"] is True
 
     state = controller.get_state()
 
@@ -455,6 +483,8 @@ def test_constructor_rejects_invalid_interval():
         TradingController(
             trading_engine=trading_engine,
             execution_manager=execution_manager,
+            order_manager=make_order_manager(),
+            position_manager=make_position_manager(),
             stock_universe=TEST_UNIVERSE,
             interval_seconds=0,
         )
@@ -469,6 +499,8 @@ def test_constructor_rejects_missing_run_all():
         TradingController(
             trading_engine=trading_engine,
             execution_manager=execution_manager,
+            order_manager=make_order_manager(),
+            position_manager=make_position_manager(),
             stock_universe=TEST_UNIVERSE,
         )
 
@@ -482,5 +514,7 @@ def test_constructor_rejects_missing_sync_open_orders():
         TradingController(
             trading_engine=trading_engine,
             execution_manager=execution_manager,
+            order_manager=make_order_manager(),
+            position_manager=make_position_manager(),
             stock_universe=TEST_UNIVERSE,
         )

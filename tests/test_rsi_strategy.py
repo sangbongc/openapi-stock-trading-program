@@ -1,61 +1,39 @@
 import pandas as pd
+import pytest
 
 from strategies.rsi_strategy import RSIStrategy
 from strategies.signal import Signal
 
 
-strategy = RSIStrategy(
-    oversold=30,
-    overbought=70,
-)
+@pytest.fixture
+def strategy() -> RSIStrategy:
+    return RSIStrategy(oversold=30, overbought=70)
 
 
-# BUY 테스트
-buy_df = pd.DataFrame({
-    "rsi": [45.0, 35.0, 25.0]
-})
+def test_oversold_rsi_returns_buy(strategy: RSIStrategy) -> None:
+    result = strategy.generate_signal(pd.DataFrame({"rsi14": [25.0]}))
 
-buy_result = strategy.generate_signal(buy_df)
-
-print("=== BUY 테스트 ===")
-print(buy_result)
-print(buy_result.signal)
-print(buy_result.confidence)
-print(buy_result.reason)
-
-assert buy_result.signal == Signal.BUY
+    assert result.signal == Signal.BUY
+    assert result.confidence == pytest.approx((30 - 25) / 30)
 
 
-# SELL 테스트
-sell_df = pd.DataFrame({
-    "rsi": [55.0, 65.0, 80.0]
-})
+def test_overbought_rsi_returns_sell(strategy: RSIStrategy) -> None:
+    result = strategy.generate_signal(pd.DataFrame({"rsi14": [80.0]}))
 
-sell_result = strategy.generate_signal(sell_df)
-
-print("\n=== SELL 테스트 ===")
-print(sell_result)
-print(sell_result.signal)
-print(sell_result.confidence)
-print(sell_result.reason)
-
-assert sell_result.signal == Signal.SELL
+    assert result.signal == Signal.SELL
+    assert result.confidence == pytest.approx((80 - 70) / 30)
 
 
-# HOLD 테스트
-hold_df = pd.DataFrame({
-    "rsi": [45.0, 50.0, 55.0]
-})
+def test_neutral_rsi_returns_hold(strategy: RSIStrategy) -> None:
+    result = strategy.generate_signal(pd.DataFrame({"rsi14": [55.0]}))
 
-hold_result = strategy.generate_signal(hold_df)
-
-print("\n=== HOLD 테스트 ===")
-print(hold_result)
-print(hold_result.signal)
-print(hold_result.confidence)
-print(hold_result.reason)
-
-assert hold_result.signal == Signal.HOLD
+    assert result.signal == Signal.HOLD
+    assert result.confidence == 0.0
 
 
-print("\n모든 RSI 전략 테스트를 통과했습니다.")
+def test_missing_or_nan_rsi_returns_hold(strategy: RSIStrategy) -> None:
+    missing = strategy.generate_signal(pd.DataFrame({"rsi": [25.0]}))
+    nan_value = strategy.generate_signal(pd.DataFrame({"rsi14": [float("nan")]}))
+
+    assert missing.signal == Signal.HOLD
+    assert nan_value.signal == Signal.HOLD

@@ -109,14 +109,3 @@ def test_get_account_balance(
     assert call_kwargs["params"]["PRCS_DVSN"] == "00"
 
     print("계좌 잔고 조회 API 구조 테스트 통과")
-from api import get_account_balance
-
-result = get_account_balance()
-
-print("예수금:", result.get("cash"))
-print("총 평가금액:", result.get("total_evaluation_amount"))
-print("보유 종목 수:", result.get("position_count"))
-print("보유 종목:", result.get("positions"))
-
-if __name__ == "__main__":
-    test_get_account_balance()

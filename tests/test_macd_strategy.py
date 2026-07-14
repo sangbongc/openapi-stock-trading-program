@@ -1,58 +1,57 @@
 import pandas as pd
+import pytest
 
 from strategies.macd_strategy import MACDStrategy
 from strategies.signal import Signal
 
 
-strategy = MACDStrategy()
+@pytest.fixture
+def strategy() -> MACDStrategy:
+    return MACDStrategy()
 
 
-# ----------------------------
-# BUY 테스트
-# ----------------------------
-buy_df = pd.DataFrame({
-    "macd": [-1.0, 0.5],
-    "macd_signal": [-0.5, 0.2]
-})
+def test_macd_above_signal_returns_buy(strategy: MACDStrategy) -> None:
+    data = pd.DataFrame({
+        "macd": [0.5],
+        "macd_signal": [0.2],
+    })
 
-buy_result = strategy.generate_signal(buy_df)
+    result = strategy.generate_signal(data)
 
-print("===== BUY TEST =====")
-print(buy_result)
-
-assert buy_result.signal == Signal.BUY
+    assert result.signal == Signal.BUY
+    assert result.confidence == pytest.approx(0.3)
 
 
-# ----------------------------
-# SELL 테스트
-# ----------------------------
-sell_df = pd.DataFrame({
-    "macd": [0.8, -0.4],
-    "macd_signal": [0.5, -0.2]
-})
+def test_macd_below_signal_returns_sell(strategy: MACDStrategy) -> None:
+    data = pd.DataFrame({
+        "macd": [-0.4],
+        "macd_signal": [-0.2],
+    })
 
-sell_result = strategy.generate_signal(sell_df)
+    result = strategy.generate_signal(data)
 
-print("\n===== SELL TEST =====")
-print(sell_result)
-
-assert sell_result.signal == Signal.SELL
+    assert result.signal == Signal.SELL
+    assert result.confidence == pytest.approx(0.2)
 
 
-# ----------------------------
-# HOLD 테스트
-# ----------------------------
-hold_df = pd.DataFrame({
-    "macd": [0.5, 0.8],
-    "macd_signal": [0.2, 0.5]
-})
+def test_equal_macd_and_signal_returns_hold(strategy: MACDStrategy) -> None:
+    data = pd.DataFrame({
+        "macd": [0.5],
+        "macd_signal": [0.5],
+    })
 
-hold_result = strategy.generate_signal(hold_df)
+    result = strategy.generate_signal(data)
 
-print("\n===== HOLD TEST =====")
-print(hold_result)
-
-assert hold_result.signal == Signal.HOLD
+    assert result.signal == Signal.HOLD
+    assert result.confidence == 0.0
 
 
-print("\n모든 MACD 전략 테스트를 통과했습니다.")
+def test_missing_or_nan_macd_returns_hold(strategy: MACDStrategy) -> None:
+    missing = strategy.generate_signal(pd.DataFrame({"close": [100]}))
+    nan_value = strategy.generate_signal(pd.DataFrame({
+        "macd": [float("nan")],
+        "macd_signal": [0.2],
+    }))
+
+    assert missing.signal == Signal.HOLD
+    assert nan_value.signal == Signal.HOLD
