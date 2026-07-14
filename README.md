@@ -1,4 +1,4 @@
-# KIS Rule-Based Auto Trading Program(with 생성형 AI)
+# KIS Rule-Based Auto Trading Program (with 생성형 AI)
 
 한국투자증권 OpenAPI를 활용한 Python 기반 국내주식 자동매매 프로젝트입니다.
 
