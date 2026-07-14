@@ -24,40 +24,27 @@ class MACDStrategy(BaseStrategy):
                 ),
             )
 
-        if len(data) < 2:
+        if data.empty:
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.HOLD,
                 confidence=0.0,
-                reason="MACD 교차를 판단하기 위한 데이터가 부족합니다.",
+                reason="MACD 방향을 판단할 데이터가 없습니다.",
             )
 
-        previous = data.iloc[-2]
         current = data.iloc[-1]
-
-        previous_macd = previous["macd"]
-        previous_signal = previous["macd_signal"]
 
         current_macd = current["macd"]
         current_signal = current["macd_signal"]
 
-        values = [
-            previous_macd,
-            previous_signal,
-            current_macd,
-            current_signal,
-        ]
-
-        if any(pd.isna(value) for value in values):
+        if pd.isna(current_macd) or pd.isna(current_signal):
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.HOLD,
                 confidence=0.0,
-                reason="MACD 계산 결과에 결측치가 있습니다.",
+                reason="최근 MACD 계산 결과에 결측치가 있습니다.",
             )
 
-        previous_macd = float(previous_macd)
-        previous_signal = float(previous_signal)
         current_macd = float(current_macd)
         current_signal = float(current_signal)
 
@@ -72,33 +59,27 @@ class MACDStrategy(BaseStrategy):
             min(difference / base_value, 1.0)
         )
 
-        if (
-            previous_macd <= previous_signal
-            and current_macd > current_signal
-        ):
+        if current_macd > current_signal:
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.BUY,
                 confidence=confidence,
                 reason=(
                     f"MACD({current_macd:.2f})가 "
-                    f"시그널선({current_signal:.2f})을 "
-                    "상향 돌파했습니다."
+                    f"시그널선({current_signal:.2f})보다 위에 있어 "
+                    "상승 모멘텀이 유지되고 있습니다."
                 ),
             )
 
-        if (
-            previous_macd >= previous_signal
-            and current_macd < current_signal
-        ):
+        if current_macd < current_signal:
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.SELL,
                 confidence=confidence,
                 reason=(
                     f"MACD({current_macd:.2f})가 "
-                    f"시그널선({current_signal:.2f})을 "
-                    "하향 돌파했습니다."
+                    f"시그널선({current_signal:.2f})보다 아래에 있어 "
+                    "하락 모멘텀이 유지되고 있습니다."
                 ),
             )
 
@@ -108,7 +89,7 @@ class MACDStrategy(BaseStrategy):
             confidence=0.0,
             reason=(
                 f"MACD({current_macd:.2f})와 "
-                f"시그널선({current_signal:.2f}) 사이에 "
-                "최근 교차가 발생하지 않았습니다."
+                f"시그널선({current_signal:.2f})이 같아 "
+                "방향성이 확인되지 않습니다."
             ),
         )
