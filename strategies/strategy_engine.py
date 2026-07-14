@@ -47,6 +47,7 @@ class StrategyEngine:
         strategies: Iterable[BaseStrategy],
         buy_threshold: float = 0.2,
         sell_threshold: float = -0.2,
+        buy_trend_filter_column: str | None = None,
     ) -> None:
         """
         Parameters
@@ -86,8 +87,15 @@ class StrategyEngine:
                 "sell_threshold는 buy_threshold보다 작아야 합니다."
             )
 
+        if buy_trend_filter_column is not None:
+            if not isinstance(buy_trend_filter_column, str):
+                raise TypeError("buy_trend_filter_column은 문자열 또는 None이어야 합니다.")
+            if not buy_trend_filter_column.strip():
+                raise ValueError("buy_trend_filter_column은 빈 문자열일 수 없습니다.")
+
         self.buy_threshold = float(buy_threshold)
         self.sell_threshold = float(sell_threshold)
+        self.buy_trend_filter_column = buy_trend_filter_column
 
     def run(self, data: pd.DataFrame) -> EngineResult:
         """
@@ -145,6 +153,10 @@ class StrategyEngine:
                 weighted_confidence_sum / active_signal_count
             )
         final_signal = self._determine_final_signal(confidence_score)
+        final_signal = self._apply_buy_trend_filter(
+            final_signal=final_signal,
+            data=data,
+        )
 
         final_confidence = self._calculate_final_confidence(
             final_signal=final_signal,
@@ -157,6 +169,33 @@ class StrategyEngine:
             final_confidence=final_confidence,
             strategy_results=strategy_results,
         )
+
+    def _apply_buy_trend_filter(
+        self,
+        final_signal: Signal,
+        data: pd.DataFrame,
+    ) -> Signal:
+        """지정된 추세선 아래에서는 신규 BUY 신호를 차단한다."""
+        if final_signal != Signal.BUY or self.buy_trend_filter_column is None:
+            return final_signal
+
+        column = self.buy_trend_filter_column
+        if "close" not in data.columns:
+            raise KeyError("매수 추세 필터 적용에 필요한 close 컬럼이 없습니다.")
+        if column not in data.columns:
+            raise KeyError(f"매수 추세 필터 컬럼이 없습니다: {column}")
+
+        close = data.iloc[-1]["close"]
+        trend_value = data.iloc[-1][column]
+
+        # 추세선이 아직 계산되지 않은 초기 구간도 신규 매수를 허용하지 않는다.
+        if pd.isna(close) or pd.isna(trend_value):
+            return Signal.HOLD
+
+        if float(close) <= float(trend_value):
+            return Signal.HOLD
+
+        return Signal.BUY
 
     @staticmethod
     def _validate_strategy_result(

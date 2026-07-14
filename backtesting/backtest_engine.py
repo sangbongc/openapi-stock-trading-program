@@ -28,6 +28,8 @@ class BacktestEngine:
         minimum_data_length: int = 120,
         commission_rate: float = 0.00015,
         slippage_rate: float = 0.0005,
+        stop_loss_rate: float | None = 0.08,
+        trailing_stop_rate: float | None = 0.10,
     ) -> None:
         if not callable(getattr(strategy_engine, "run", None)):
             raise TypeError("strategy_engine에는 호출 가능한 run() 메서드가 필요합니다.")
@@ -39,6 +41,12 @@ class BacktestEngine:
             raise ValueError("minimum_data_length는 1 이상이어야 합니다.")
         if commission_rate < 0 or slippage_rate < 0:
             raise ValueError("수수료율과 슬리피지는 0 이상이어야 합니다.")
+        for name, rate in (
+            ("stop_loss_rate", stop_loss_rate),
+            ("trailing_stop_rate", trailing_stop_rate),
+        ):
+            if rate is not None and not 0 < rate < 1:
+                raise ValueError(f"{name}는 None 또는 0과 1 사이여야 합니다.")
 
         self.strategy_engine = strategy_engine
         self.indicator_builder = indicator_builder
@@ -46,6 +54,8 @@ class BacktestEngine:
         self.minimum_data_length = int(minimum_data_length)
         self.commission_rate = float(commission_rate)
         self.slippage_rate = float(slippage_rate)
+        self.stop_loss_rate = stop_loss_rate
+        self.trailing_stop_rate = trailing_stop_rate
 
     def run(self, stock_code: str, price_data: pd.DataFrame) -> BacktestResult:
         data = self._prepare_price_data(price_data)
@@ -69,6 +79,8 @@ class BacktestEngine:
 
         cash = self.initial_cash
         quantity = 0
+        entry_price: float | None = None
+        highest_price: float | None = None
         pending_signal: Signal | None = None
         trades: list[BacktestTrade] = []
         equity_curve: list[dict[str, Any]] = []
@@ -86,7 +98,40 @@ class BacktestEngine:
                 )
                 if trade is not None:
                     trades.append(trade)
+                    if trade.side == "BUY":
+                        entry_price = trade.price
+                        highest_price = trade.price
+                    else:
+                        entry_price = None
+                        highest_price = None
                 pending_signal = None
+
+            # 전일까지 확정된 최고가로 보호 손절선을 먼저 계산한다.
+            # 당일 고가를 먼저 반영하면 실제 장중에 저가가 고가보다 먼저
+            # 발생했을 가능성을 무시하게 되므로 미래 정보가 섞일 수 있다.
+            if quantity > 0 and entry_price is not None:
+                stop_price, stop_reason = self._get_protective_stop(
+                    entry_price=entry_price,
+                    highest_price=highest_price or entry_price,
+                )
+                if stop_price is not None and float(row["low"]) <= stop_price:
+                    execution_price = min(float(row["open"]), stop_price)
+                    cash, quantity, trade = self._execute(
+                        date=current_date,
+                        open_price=execution_price,
+                        signal=Signal.SELL,
+                        cash=cash,
+                        quantity=quantity,
+                        reason=stop_reason,
+                    )
+                    if trade is not None:
+                        trades.append(trade)
+                    entry_price = None
+                    highest_price = None
+
+            if quantity > 0:
+                day_high = float(row["high"])
+                highest_price = max(highest_price or day_high, day_high)
 
             close_price = float(row["close"])
             position_value = quantity * close_price
@@ -158,6 +203,7 @@ class BacktestEngine:
         signal: Signal,
         cash: float,
         quantity: int,
+        reason: str | None = None,
     ) -> tuple[float, int, BacktestTrade | None]:
         if open_price <= 0:
             raise ValueError(f"{date}의 시가가 0 이하입니다.")
@@ -180,7 +226,7 @@ class BacktestEngine:
                 gross_amount=gross,
                 fee=fee,
                 cash_after=cash_after,
-                reason="전략 엔진 BUY 신호",
+                reason=reason or "전략 엔진 BUY 신호",
             )
 
         if signal == Signal.SELL and quantity > 0:
@@ -196,10 +242,39 @@ class BacktestEngine:
                 gross_amount=gross,
                 fee=fee,
                 cash_after=cash_after,
-                reason="전략 엔진 SELL 신호",
+                reason=reason or "전략 엔진 SELL 신호",
             )
 
         return cash, quantity, None
+
+    def _get_protective_stop(
+        self,
+        entry_price: float,
+        highest_price: float,
+    ) -> tuple[float | None, str]:
+        """고정 손절선과 추적 손절선 중 더 높은 가격을 반환한다."""
+        candidates: list[tuple[float, str]] = []
+
+        if self.stop_loss_rate is not None:
+            candidates.append(
+                (
+                    entry_price * (1.0 - self.stop_loss_rate),
+                    f"고정 손절(-{self.stop_loss_rate * 100:.1f}%)",
+                )
+            )
+
+        if self.trailing_stop_rate is not None:
+            candidates.append(
+                (
+                    highest_price * (1.0 - self.trailing_stop_rate),
+                    f"추적 손절(-{self.trailing_stop_rate * 100:.1f}%)",
+                )
+            )
+
+        if not candidates:
+            return None, ""
+
+        return max(candidates, key=lambda item: item[0])
 
     @classmethod
     def _prepare_price_data(cls, price_data: pd.DataFrame) -> pd.DataFrame:

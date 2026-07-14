@@ -31,6 +31,7 @@ def main() -> None:
         strategies=strategies,
         buy_threshold=0.2,
         sell_threshold=-0.2,
+        buy_trend_filter_column="ma60",
     )
 
     engine = BacktestEngine(
