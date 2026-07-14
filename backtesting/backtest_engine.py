@@ -55,6 +55,18 @@ class BacktestEngine:
                 f"최소 {self.minimum_data_length + 1}개가 필요합니다."
             )
 
+        # 모든 지표는 과거와 현재 행만 사용하는 rolling/ewm 계산이므로
+        # 전체 기간에 대해 한 번 계산해도 미래 데이터 누출이 발생하지 않는다.
+        # 기존처럼 거래일마다 처음부터 재계산하면 데이터 길이가 늘어날수록
+        # 계산량이 O(n²)에 가까워지므로 백테스트가 급격히 느려진다.
+        indicator_data = self.indicator_builder(data)
+        if not isinstance(indicator_data, pd.DataFrame):
+            raise TypeError("indicator_builder는 pandas DataFrame을 반환해야 합니다.")
+        if len(indicator_data) != len(data):
+            raise ValueError(
+                "indicator_builder는 입력 데이터의 행 개수를 변경할 수 없습니다."
+            )
+
         cash = self.initial_cash
         quantity = 0
         pending_signal: Signal | None = None
@@ -92,9 +104,11 @@ class BacktestEngine:
             if index == len(data) - 1 or index + 1 < self.minimum_data_length:
                 continue
 
-            history = data.iloc[: index + 1].copy()
-            indicator_data = self.indicator_builder(history)
-            signal = self._extract_signal(self.strategy_engine.run(indicator_data))
+            # 현재 거래일까지의 행만 전략에 전달하여 미래 데이터 접근을 막는다.
+            history_with_indicators = indicator_data.iloc[: index + 1]
+            signal = self._extract_signal(
+                self.strategy_engine.run(history_with_indicators)
+            )
 
             if signal == Signal.BUY and quantity == 0:
                 pending_signal = Signal.BUY
