@@ -30,6 +30,7 @@ class BacktestEngine:
         slippage_rate: float = 0.0005,
         stop_loss_rate: float | None = 0.08,
         trailing_stop_rate: float | None = 0.10,
+        stop_reentry_cooldown_days: int = 5,
     ) -> None:
         if not callable(getattr(strategy_engine, "run", None)):
             raise TypeError("strategy_engine에는 호출 가능한 run() 메서드가 필요합니다.")
@@ -47,6 +48,12 @@ class BacktestEngine:
         ):
             if rate is not None and not 0 < rate < 1:
                 raise ValueError(f"{name}는 None 또는 0과 1 사이여야 합니다.")
+        if (
+            not isinstance(stop_reentry_cooldown_days, int)
+            or isinstance(stop_reentry_cooldown_days, bool)
+            or stop_reentry_cooldown_days < 0
+        ):
+            raise ValueError("stop_reentry_cooldown_days는 0 이상의 정수여야 합니다.")
 
         self.strategy_engine = strategy_engine
         self.indicator_builder = indicator_builder
@@ -56,6 +63,7 @@ class BacktestEngine:
         self.slippage_rate = float(slippage_rate)
         self.stop_loss_rate = stop_loss_rate
         self.trailing_stop_rate = trailing_stop_rate
+        self.stop_reentry_cooldown_days = stop_reentry_cooldown_days
 
     def run(self, stock_code: str, price_data: pd.DataFrame) -> BacktestResult:
         data = self._prepare_price_data(price_data)
@@ -81,6 +89,7 @@ class BacktestEngine:
         quantity = 0
         entry_price: float | None = None
         highest_price: float | None = None
+        reentry_allowed_index = 0
         pending_signal: Signal | None = None
         trades: list[BacktestTrade] = []
         equity_curve: list[dict[str, Any]] = []
@@ -126,6 +135,9 @@ class BacktestEngine:
                     )
                     if trade is not None:
                         trades.append(trade)
+                        reentry_allowed_index = (
+                            index + self.stop_reentry_cooldown_days
+                        )
                     entry_price = None
                     highest_price = None
 
@@ -155,7 +167,11 @@ class BacktestEngine:
                 self.strategy_engine.run(history_with_indicators)
             )
 
-            if signal == Signal.BUY and quantity == 0:
+            if (
+                signal == Signal.BUY
+                and quantity == 0
+                and index >= reentry_allowed_index
+            ):
                 pending_signal = Signal.BUY
             elif signal == Signal.SELL and quantity > 0:
                 pending_signal = Signal.SELL

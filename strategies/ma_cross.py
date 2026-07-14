@@ -37,80 +37,73 @@ class MACrossStrategy(BaseStrategy):
                 ),
             )
 
-        if len(data) < 2:
+        if data.empty:
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.HOLD,
                 confidence=0.0,
-                reason="교차 여부를 판단하기 위한 데이터가 부족합니다.",
+                reason="이동평균 추세를 판단할 데이터가 없습니다.",
             )
 
-        previous = data.iloc[-2]
         current = data.iloc[-1]
-
-        previous_short = previous[short_column]
-        previous_long = previous[long_column]
-
         current_short = current[short_column]
         current_long = current[long_column]
 
-        values = [
-            previous_short,
-            previous_long,
-            current_short,
-            current_long,
-        ]
-
-        if any(pd.isna(value) for value in values):
+        if pd.isna(current_short) or pd.isna(current_long):
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.HOLD,
                 confidence=0.0,
-                reason="이동평균 계산 결과에 결측치가 있습니다.",
+                reason="최근 이동평균 계산 결과에 결측치가 있습니다.",
+            )
+
+        current_short = float(current_short)
+        current_long = float(current_long)
+
+        if current_long == 0:
+            return StrategyResult(
+                strategy=self.name,
+                signal=Signal.HOLD,
+                confidence=0.0,
+                reason="장기 이동평균 값이 0이어서 추세를 판단할 수 없습니다.",
             )
 
         difference_rate = abs(
             current_short - current_long
-        ) / current_long
-
+        ) / abs(current_long)
         confidence = float(min(difference_rate * 10, 1.0))
 
-        if (
-            previous_short <= previous_long
-            and current_short > current_long
-        ):
+        if current_short > current_long:
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.BUY,
                 confidence=confidence,
                 reason=(
                     f"{self.short_window}일 이동평균선이 "
-                    f"{self.long_window}일 이동평균선을 "
-                    "상향 돌파했습니다."
+                    f"{self.long_window}일 이동평균선보다 위에 있어 "
+                    "상승 배열이 유지되고 있습니다."
                 ),
             )
 
-        if (
-            previous_short >= previous_long
-            and current_short < current_long
-        ):
+        if current_short < current_long:
             return StrategyResult(
                 strategy=self.name,
                 signal=Signal.SELL,
                 confidence=confidence,
                 reason=(
                     f"{self.short_window}일 이동평균선이 "
-                    f"{self.long_window}일 이동평균선을 "
-                    "하향 돌파했습니다."
+                    f"{self.long_window}일 이동평균선보다 아래에 있어 "
+                    "하락 배열이 유지되고 있습니다."
                 ),
             )
 
         return StrategyResult(
             strategy=self.name,
             signal=Signal.HOLD,
-            confidence=confidence,
+            confidence=0.0,
             reason=(
-                "최근 두 거래일 사이에 이동평균선 교차가 "
-                "발생하지 않았습니다."
+                f"{self.short_window}일 이동평균선과 "
+                f"{self.long_window}일 이동평균선이 같아 "
+                "방향성이 확인되지 않습니다."
             ),
         )
