@@ -24,9 +24,9 @@ from trading.data_provider import prepare_strategy_data
 from universe import STOCK_UNIVERSE
 from data_collector import collect_daily_prices
 
-DAILY_PRICE_TARGET_ROWS = 250
-DAILY_PRICE_LOOKBACK_DAYS = 400
-DAILY_PRICE_MAX_REQUESTS = 5
+DAILY_PRICE_TARGET_ROWS = 1000
+DAILY_PRICE_LOOKBACK_DAYS = 500
+DAILY_PRICE_MAX_REQUESTS = 15
 
 TRADING_INTERVAL_SECONDS = 300.0
 DEFAULT_BUY_QUANTITY = 1
