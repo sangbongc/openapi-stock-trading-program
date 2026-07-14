@@ -1,54 +1,138 @@
 from backtesting import BacktestEngine
-from indicator import add_all_indicators, get_daily_price_df
-from strategies import StrategyEngine, StrategyFactory
+from indicator import (
+    add_all_indicators,
+    get_daily_price_df,
+)
+from strategies import (
+    StrategyEngine,
+    StrategyFactory,
+)
+from universe import STOCK_UNIVERSE
 
-STOCK_CODE = "005930"
+
 DATA_LIMIT = 1000
-STRATEGY_NAMES = ["ma_cross", "rsi", "macd", "bollinger"]
+
+STRATEGY_NAMES = [
+    "ma_cross",
+    "rsi",
+    "macd",
+    "bollinger",
+]
 
 
 def main() -> None:
-    price_data = get_daily_price_df(STOCK_CODE, limit=DATA_LIMIT)
-    strategies = StrategyFactory.create_strategies(STRATEGY_NAMES)
+    strategies = (
+        StrategyFactory.create_strategies(
+            STRATEGY_NAMES
+        )
+    )
+
     strategy_engine = StrategyEngine(
         strategies=strategies,
         buy_threshold=0.2,
         sell_threshold=-0.2,
     )
+
     engine = BacktestEngine(
         strategy_engine=strategy_engine,
         indicator_builder=add_all_indicators,
         initial_cash=100_000_000,
         minimum_data_length=120,
     )
-    result = engine.run(STOCK_CODE, price_data)
 
-    print("=" * 50)
-    print(f"백테스트 결과: {result.stock_code}")
-    print("=" * 50)
-    print(f"초기 자금: {result.initial_cash:,.0f}원")
-    print(f"최종 자산: {result.final_equity:,.0f}원")
-    print(f"총수익률: {result.metrics['total_return'] * 100:.2f}%")
-    print(f"연환산 수익률: {result.metrics['annualized_return'] * 100:.2f}%")
-    print(f"최대 낙폭(MDD): {result.metrics['max_drawdown'] * 100:.2f}%")
-    print(f"샤프지수: {result.metrics['sharpe_ratio']:.4f}")
-    print(f"완료 거래 수: {result.metrics['completed_trade_count']}회")
-    print(f"승률: {result.metrics['win_rate'] * 100:.2f}%")
-    print(
-    "Buy & Hold 수익률: "
-    f"{result.metrics['buy_and_hold_return'] * 100:.2f}%"
-)
+    results = []
 
-    print(
-    "초과수익률: "
-    f"{result.metrics['excess_return'] * 100:.2f}%"
-)
+    for stock in STOCK_UNIVERSE:
+        stock_code = stock["code"]
+        stock_name = stock["name"]
 
-    print("\n[체결 내역]")
-    for trade in result.trades:
+        print()
         print(
-            f"{trade.date} | {trade.side} | {trade.quantity}주 | "
-            f"{trade.price:,.2f}원 | 수수료 {trade.fee:,.2f}원"
+            f"{stock_name}({stock_code}) "
+            "백테스트 중..."
+        )
+
+        price_data = get_daily_price_df(
+            stock_code,
+            limit=DATA_LIMIT,
+        )
+
+        result = engine.run(
+            stock_code,
+            price_data,
+        )
+
+        results.append(
+            {
+                "stock_name": stock_name,
+                "stock_code": stock_code,
+                "total_return": (
+                    result.metrics["total_return"]
+                ),
+                "annualized_return": (
+                    result.metrics[
+                        "annualized_return"
+                    ]
+                ),
+                "buy_and_hold_return": (
+                    result.metrics[
+                        "buy_and_hold_return"
+                    ]
+                ),
+                "excess_return": (
+                    result.metrics[
+                        "excess_return"
+                    ]
+                ),
+                "max_drawdown": (
+                    result.metrics[
+                        "max_drawdown"
+                    ]
+                ),
+                "sharpe_ratio": (
+                    result.metrics[
+                        "sharpe_ratio"
+                    ]
+                ),
+                "completed_trade_count": (
+                    result.metrics[
+                        "completed_trade_count"
+                    ]
+                ),
+                "win_rate": (
+                    result.metrics["win_rate"]
+                ),
+            }
+        )
+
+    print()
+    print("=" * 110)
+    print("다종목 백테스트 결과")
+    print("=" * 110)
+
+    header = (
+        f"{'종목':<12}"
+        f"{'전략수익률':>12}"
+        f"{'Buy&Hold':>12}"
+        f"{'초과수익률':>12}"
+        f"{'MDD':>10}"
+        f"{'Sharpe':>10}"
+        f"{'거래':>8}"
+        f"{'승률':>10}"
+    )
+    print(header)
+    print("-" * 110)
+
+    for row in results:
+        print(
+            f"{row['stock_name']:<12}"
+            f"{row['total_return'] * 100:>11.2f}%"
+            f"{row['buy_and_hold_return'] * 100:>11.2f}%"
+            f"{row['excess_return'] * 100:>11.2f}%"
+            f"{row['max_drawdown'] * 100:>9.2f}%"
+            f"{row['sharpe_ratio']:>10.4f}"
+            f"{row['completed_trade_count']:>8}"
+            f"{row['win_rate'] * 100:>9.2f}%"
         )
 
 
