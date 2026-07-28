@@ -86,7 +86,7 @@ def print_trading_results(
             "reason",
             "처리 사유 없음",
         )
-
+        print(f"[{display_name}]")
         print(f"신호: {signal}")
         print(f"처리: {action}")
         print(f"주문 생성: {ordered}")
@@ -134,39 +134,39 @@ def print_trading_results(
 
             if individual_results is not None:
                 
-                    if isinstance(individual_results, dict):
-                        result_items = individual_results.items()
-                    else:
-                        result_items = enumerate(individual_results)
+                if isinstance(individual_results, dict):
+                    result_items = individual_results.items()
+                else:
+                    result_items = enumerate(individual_results)
 
-                    for strategy_name, individual_result in result_items:
-                        if isinstance(individual_result, dict):
-                            individual_signal = individual_result.get(
-                                "signal"
-                            )
-                            confidence = individual_result.get(
-                                "confidence"
-                            )
-                            individual_reason = individual_result.get(
-                                "reason",
-                                "사유 없음",
-                            )
-                        else:
-                            individual_signal = getattr(
-                                individual_result,
-                                "signal",
-                                None,
-                            )
-                            confidence = getattr(
+                for strategy_name, individual_result in result_items:
+                    if isinstance(individual_result, dict):
+                        individual_signal = individual_result.get(
+                             "signal"
+                        )
+                        confidence = individual_result.get(
+                            "confidence"
+                        )
+                        individual_reason = individual_result.get(
+                            "reason",
+                            "사유 없음",
+                        )
+                    else:
+                        individual_signal = getattr(
+                            individual_result,
+                            "signal",
+                            None,
+                        )
+                        confidence = getattr(
                                 individual_result,
                                 "confidence",
                                 None,
                             )
-                            individual_reason = getattr(
-                                individual_result,
-                                "reason",
-                                "사유 없음",
-                            )
+                        individual_reason = getattr(
+                            individual_result,
+                            "reason",
+                               "사유 없음",
+                        )
 
                         print(f"- 전략: {strategy_name}")
                         print(
@@ -351,18 +351,6 @@ def print_status(
     print(f"최근 오류: {last_error}")
 
 
-def print_last_results(
-    controller: TradingController,
-) -> None:
-    """
-    가장 최근 TradingEngine 실행 결과를 출력한다.
-    """
-    state = controller.get_state()
-    results = state.get("last_results", [])
-
-    print_trading_results(results)
-
-
 def print_account(
     result: dict[str, Any],
 ) -> None:
@@ -522,4 +510,67 @@ def print_account(
             f"{float(position.profit_loss_rate):,.2f}%"
         )
 
+
+def print_manual_order_result(
+    result: dict[str, Any],
+) -> None:
+    """
+    수동 주문 처리 결과를 출력한다.
+    """
+    print()
+    print("수동 주문 결과")
+    print("-" * 44)
+
+    success = result.get("success") is True
+
+    print(
+        f"처리 결과: "
+        f"{'성공' if success else '실패'}"
+    )
+    print(
+        f"주문 상태: "
+        f"{result.get('status', '-')}"
+    )
+
+    message = (
+        result.get("message")
+        or result.get("reason")
+        or "메시지 없음"
+    )
+    print(f"메시지: {message}")
+
+    if result.get("stock_code"):
+        print(
+            f"종목 코드: "
+            f"{result['stock_code']}"
+        )
+
+    if result.get("side"):
+        print(f"구분: {result['side']}")
+
+    if result.get("quantity") is not None:
+        print(
+            f"주문 수량: "
+            f"{result['quantity']}주"
+        )
+
+    if result.get("order_type"):
+        print(
+            f"주문 유형: "
+            f"{result['order_type']}"
+        )
+
+    if result.get("price") is not None:
+        price = result["price"]
+
+        if result.get("order_type") == "MARKET":
+            print("주문 가격: 시장가")
+        else:
+            print(f"주문 가격: {price:,}원")
+
+    if result.get("order_no"):
+        print(
+            f"주문번호: "
+            f"{result['order_no']}"
+        )
 
