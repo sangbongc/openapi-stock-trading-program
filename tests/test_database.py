@@ -1,5 +1,10 @@
 # tests/test_database.py
 
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
 from database import (
     clear_current_prices,
     clear_daily_prices,
@@ -15,9 +20,24 @@ from database import (
 )
 
 
-def test_database():
+@pytest.fixture
+def isolated_database(tmp_path: Path):
+    """
+    실제 DB 대신 테스트 전용 임시 SQLite 파일을 사용한다.
+    """
+    test_db_path = tmp_path / "test_trading.db"
+
+    with patch(
+        "database.DB_PATH",
+        str(test_db_path),
+    ):
+        create_tables()
+        yield test_db_path
+
+
+def test_database(isolated_database: Path):
     print("\n1. 테이블 생성 테스트")
-    create_tables()
+    assert isolated_database.exists()
     print("테이블 생성 완료")
 
     print("\n2. 기존 테스트 데이터 삭제")
@@ -26,6 +46,9 @@ def test_database():
 
     print(f"현재가 삭제: {deleted_current}건")
     print(f"일봉 삭제: {deleted_daily}건")
+
+    assert deleted_current == 0
+    assert deleted_daily == 0
 
     print("\n3. 현재가 저장 테스트")
 
@@ -206,7 +229,3 @@ def test_database():
     print("존재하지 않는 종목 조회 테스트 통과")
 
     print("\n모든 database.py 테스트 통과")
-
-
-if __name__ == "__main__":
-    test_database()

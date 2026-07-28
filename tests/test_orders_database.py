@@ -1,3 +1,10 @@
+# tests/test_orders_database.py
+
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
 from database import (
     create_tables,
     fetch_orders,
@@ -5,8 +12,25 @@ from database import (
 )
 
 
-def test_save_success_order():
-    create_tables()
+@pytest.fixture
+def isolated_database(tmp_path: Path):
+    """
+    실제 DB 대신 테스트 전용 임시 SQLite 파일을 사용한다.
+    """
+    test_db_path = tmp_path / "test_orders.db"
+
+    with patch(
+        "database.DB_PATH",
+        str(test_db_path),
+    ):
+        create_tables()
+        yield test_db_path
+
+
+def test_save_success_order(
+    isolated_database: Path,
+):
+    assert isolated_database.exists()
 
     order_id = save_order(
         stock_code="005930",
@@ -43,7 +67,11 @@ def test_save_success_order():
     print("성공 주문 저장 테스트 통과")
 
 
-def test_save_failed_order():
+def test_save_failed_order(
+    isolated_database: Path,
+):
+    assert isolated_database.exists()
+
     order_id = save_order(
         stock_code="000660",
         side="BUY",
@@ -55,12 +83,15 @@ def test_save_failed_order():
         message="주문 가능 금액을 초과했습니다.",
     )
 
+    assert isinstance(order_id, int)
     assert order_id > 0
 
     orders = fetch_orders(
         stock_code="000660",
         limit=1,
     )
+
+    assert len(orders) == 1
 
     saved_order = orders[0]
 
@@ -69,10 +100,3 @@ def test_save_failed_order():
     assert saved_order["message_code"] == "ORDER_ERROR"
 
     print("실패 주문 저장 테스트 통과")
-
-
-if __name__ == "__main__":
-    test_save_success_order()
-    test_save_failed_order()
-
-    print("orders 테이블 테스트 완료")
