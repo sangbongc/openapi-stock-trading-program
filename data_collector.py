@@ -20,6 +20,7 @@ DEFAULT_MAX_REQUESTS = 5
 DEFAULT_RETRY_COUNT = 3
 DEFAULT_RETRY_DELAY = 2.0
 
+
 def collect_daily_prices(
     stock_universe: Iterable[str | dict[str, Any]],
     target_rows: int = DEFAULT_TARGET_ROWS,
@@ -359,6 +360,7 @@ def _validate_positive_integer(
         raise ValueError(
             f"{name}은 1 이상이어야 합니다."
         )
+
 
 def _request_daily_price_with_retry(
     token: str,

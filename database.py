@@ -1,6 +1,8 @@
 import logging
 import os
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from config import DB_PATH
@@ -69,6 +71,23 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+@contextmanager
+def database_connection() -> Iterator[sqlite3.Connection]:
+    """
+    SQLite 연결의 트랜잭션과 종료를 함께 관리한다.
+
+    정상 종료 시 커밋하고, 예외 발생 시 롤백한다.
+    작업 종료 후에는 연결을 반드시 닫는다.
+    """
+    conn = get_connection()
+
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 def create_tables() -> None:
     """
     자동매매 프로그램에서 사용하는 테이블과 인덱스를 생성한다.
@@ -82,7 +101,7 @@ def create_tables() -> None:
         종목별 일봉 데이터를 저장한다.
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
 
             cur.execute("""
@@ -201,7 +220,7 @@ def reset_daily_prices_table() -> None:
     기존 daily_prices 데이터는 모두 삭제된다.
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
 
             cur.execute("DROP TABLE IF EXISTS daily_prices")
@@ -246,7 +265,7 @@ def save_current_price(price_data: dict[str, Any]) -> int:
         새로 저장된 행의 ID
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
 
             cur.execute(
@@ -330,7 +349,7 @@ def save_daily_prices(rows: list[dict[str, Any]]) -> int:
     ]
 
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
             cur.executemany(INSERT_DAILY_PRICE_SQL, values)
 
@@ -359,7 +378,7 @@ def fetch_all_current_prices() -> list[dict[str, Any]]:
         수집 시각을 기준으로 내림차순 정렬된 현재가 데이터
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
 
             cur.execute("""
@@ -395,7 +414,7 @@ def fetch_latest_current_price(
         저장된 데이터가 없으면 None을 반환한다.
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
 
             cur.execute("""
@@ -442,7 +461,7 @@ def fetch_daily_prices_by_stock(
         raise ValueError("limit은 1 이상의 정수여야 합니다.")
 
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
 
             cur.execute("""
@@ -475,7 +494,7 @@ def fetch_all_daily_prices() -> list[dict[str, Any]]:
         종목 코드 오름차순, 날짜 내림차순으로 정렬된 일봉 데이터
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
 
             cur.execute("""
@@ -509,7 +528,7 @@ def fetch_latest_daily_date(stock_code: str) -> str | None:
         저장된 일봉이 없으면 None을 반환한다.
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
 
             cur.execute("""
@@ -543,7 +562,7 @@ def fetch_saved_stock_codes() -> list[str]:
         중복이 제거된 종목 코드 목록
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
 
             cur.execute("""
@@ -571,7 +590,7 @@ def clear_current_prices() -> int:
         삭제된 행의 개수
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
             cur.execute("DELETE FROM current_prices")
 
@@ -597,7 +616,7 @@ def clear_daily_prices() -> int:
         삭제된 행의 개수
     """
     try:
-        with get_connection() as conn:
+        with database_connection() as conn:
             cur = conn.cursor()
             cur.execute("DELETE FROM daily_prices")
 
@@ -760,9 +779,7 @@ def save_order(
     average_fill_price = 0
     updated_at = created_at
     
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -805,16 +822,10 @@ def save_order(
     ),
 )
 
-        conn.commit()
 
         return cursor.lastrowid
 
-    except Exception:
-        conn.rollback()
-        raise
 
-    finally:
-        conn.close()
 
 def fetch_orders(
     stock_code: Optional[str] = None,
@@ -842,10 +853,9 @@ def fetch_orders(
     if limit <= 0:
         raise ValueError("limit은 1 이상이어야 합니다.")
 
-    conn = get_connection()
-    conn.row_factory = sqlite3.Row
+    with database_connection() as conn:
+        conn.row_factory = sqlite3.Row
 
-    try:
         cursor = conn.cursor()
 
         if stock_code is None:
@@ -886,8 +896,7 @@ def fetch_orders(
 
         return [dict(row) for row in rows]
 
-    finally:
-        conn.close()
+
 
 def migrate_orders_table() -> None:
     """
@@ -895,9 +904,7 @@ def migrate_orders_table() -> None:
 
     이미 존재하는 컬럼은 추가하지 않는다.
     """
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute("PRAGMA table_info(orders)")
@@ -969,14 +976,8 @@ def migrate_orders_table() -> None:
             """
         )
 
-        conn.commit()
 
-    except Exception:
-        conn.rollback()
-        raise
 
-    finally:
-        conn.close()
 
 def fetch_order_by_order_no(
     order_no: str,
@@ -984,9 +985,7 @@ def fetch_order_by_order_no(
     """
     한국투자증권 주문번호로 로컬 주문을 조회한다.
     """
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1005,17 +1004,13 @@ def fetch_order_by_order_no(
 
         return dict(row)
 
-    finally:
-        conn.close()
 
 
 def fetch_open_orders() -> list[dict[str, Any]]:
     """
     체결이 아직 종료되지 않은 접수 주문을 조회한다.
     """
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1037,8 +1032,6 @@ def fetch_open_orders() -> list[dict[str, Any]]:
             for row in cursor.fetchall()
         ]
 
-    finally:
-        conn.close()
 
 
 def update_order_execution(
@@ -1094,9 +1087,7 @@ def update_order_execution(
         "%Y-%m-%d %H:%M:%S"
     )
 
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1126,14 +1117,8 @@ def update_order_execution(
                 "주문이 없습니다."
             )
 
-        conn.commit()
 
-    except Exception:
-        conn.rollback()
-        raise
 
-    finally:
-        conn.close()
 
 def save_execution(
     order_id: int,
@@ -1179,9 +1164,7 @@ def save_execution(
     if not executed_at.strip():
         raise ValueError("executed_at은 비어 있을 수 없습니다.")
 
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1208,19 +1191,13 @@ def save_execution(
             ),
         )
 
-        conn.commit()
 
         if cursor.rowcount == 0:
             return None
 
         return int(cursor.lastrowid)
 
-    except Exception:
-        conn.rollback()
-        raise
 
-    finally:
-        conn.close()
 
 def fetch_executions_by_order_no(
     order_no: str,
@@ -1231,9 +1208,7 @@ def fetch_executions_by_order_no(
     if not order_no.strip():
         raise ValueError("order_no는 비어 있을 수 없습니다.")
 
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1260,8 +1235,7 @@ def fetch_executions_by_order_no(
             for row in cursor.fetchall()
         ]
 
-    finally:
-        conn.close()
+
 
 def fetch_executions_by_order_id(
     order_id: int,
@@ -1272,9 +1246,7 @@ def fetch_executions_by_order_id(
     if order_id <= 0:
         raise ValueError("order_id는 1 이상이어야 합니다.")
 
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1301,8 +1273,7 @@ def fetch_executions_by_order_id(
             for row in cursor.fetchall()
         ]
 
-    finally:
-        conn.close()
+
 
 def fetch_executions(
     limit: int = 100,
@@ -1313,9 +1284,7 @@ def fetch_executions(
     if limit <= 0:
         raise ValueError("limit은 1 이상이어야 합니다.")
 
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1342,8 +1311,7 @@ def fetch_executions(
             for row in cursor.fetchall()
         ]
 
-    finally:
-        conn.close()
+
 
 def get_total_executed_quantity(
     order_no: str,
@@ -1354,9 +1322,7 @@ def get_total_executed_quantity(
     if not order_no.strip():
         raise ValueError("order_no는 비어 있을 수 없습니다.")
 
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1372,8 +1338,7 @@ def get_total_executed_quantity(
 
         return int(result[0])
 
-    finally:
-        conn.close()
+
 
 def get_average_execution_price(
     order_no: str,
@@ -1384,9 +1349,7 @@ def get_average_execution_price(
     if not order_no.strip():
         raise ValueError("order_no는 비어 있을 수 없습니다.")
 
-    conn = get_connection()
-
-    try:
+    with database_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1406,6 +1369,3 @@ def get_average_execution_price(
             return 0.0
 
         return float(total_amount) / int(total_quantity)
-
-    finally:
-        conn.close()

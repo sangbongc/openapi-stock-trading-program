@@ -185,7 +185,6 @@ class BacktestEngine:
             initial_cash=self.initial_cash,
         )
         first_open = float(data.iloc[0]["open"])
-        last_close = float(data.iloc[-1]["close"])
 
         buy_and_hold_return = (
             last_close / first_open - 1.0
