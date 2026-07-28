@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-from trading.trading_controller import (
-    TradingController,
-)
 
 def normalize_signal(signal: Any) -> str:
     """
@@ -168,19 +165,19 @@ def print_trading_results(
                                "사유 없음",
                         )
 
-                        print(f"- 전략: {strategy_name}")
-                        print(
-                            "  신호: "
-                            f"{normalize_signal(individual_signal)}"
+                    print(f"- 전략: {strategy_name}")
+                    print(
+                        "  신호: "
+                        f"{normalize_signal(individual_signal)}"
                         )
 
-                        if confidence is not None:
-                            print(
-                                f"  신뢰도: {confidence:.4f}"
+                    if confidence is not None:
+                        print(
+                            f"  신뢰도: {confidence:.4f}"
                             )
 
-                        print(
-                            f"  사유: {individual_reason}"
+                    print(
+                        f"  사유: {individual_reason}"
                         )
         print()
 
