@@ -2,7 +2,6 @@ from __future__ import annotations
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Any,Callable
-from trading.position_manager import PositionManager
 
 from api import inquire_daily_orders
 from database import (
@@ -50,7 +49,7 @@ class ExecutionManager:
     """
     def __init__(
         self,
-        position_refresher: Callable[[], Any] | None = None, position_manager: PositionManager | None = None,
+        position_refresher: Callable[[], Any] | None = None,
     ) -> None:
         if (
             position_refresher is not None
@@ -61,12 +60,6 @@ class ExecutionManager:
             )
 
         self._position_refresher = position_refresher
-        self.position_manager = position_manager
-    FINAL_STATUSES = {
-        "FILLED",
-        "CANCELLED",
-        "REJECTED",
-    }
 
     def sync_order(
         self,

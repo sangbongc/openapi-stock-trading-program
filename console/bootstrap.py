@@ -86,7 +86,6 @@ def build_controller() -> TradingController:
     order_manager = OrderManager()
 
     execution_manager = ExecutionManager(
-        position_manager=position_manager,
         position_refresher=position_manager.refresh,
     )
 
